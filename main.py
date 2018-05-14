@@ -1,9 +1,11 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import sys, time
+import sys, time, re, datetime
 import win32clipboard as w32clip
 import pywintypes
+
+import auslab
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -14,6 +16,68 @@ from PIL import ImageGrab
 AUSLAB_MINIMUM_WIDTH = 1008
 AUSLAB_MINIMUM_HEIGHT = 730
 AUSLAB_MINIMUM_BLACK = 80
+
+
+PATIENT_NAME_REGEX = re.compile(r'Name:\s+(.*)DOB:')
+PATIENT_UR_REGEX = re.compile(r'UR No:\s+[A-Z]{2}(\d{6})')
+PATIENT_DOB_REGEX = re.compile(r'DOB:\s+(\d{2}-\w{3}-\d{2})')
+COLL_REGEX = re.compile(r'Coll:\s+(\d{2}:\d{2}\s+\d{2}-\w{3}-\d{2})')
+
+TEST_REGEX = {
+    'Hb' : re.compile(r'Hgb\s+:\s+(\d+)\s+[ HL]'),
+    'WBC' : re.compile(r'[EW]BC\s+:\s+([0-9\.]+)\s+[ HL]'),
+    'Plt' : re.compile(r'PLT\s+:\s+(\d+)\s+[ HL]'),
+    'Na' : re.compile(r'Sodium\s+(\d+)\s+'),
+    'K' : re.compile(r'Potassium\s+([0-9\.]+)\s+'),
+    'Cr' : re.compile(r'Creatinine\s+(\<?\>?\s*\d+)\s+'),
+    'eGFR' : re.compile(r'eGFR\s+(\<?\>?\s*\d+)\s+'),
+}
+
+class Patient:
+
+    def __init__(self):
+        self.name = None
+        self.UR = None
+        self.DOB = None
+        self.test_results = {}
+
+    def add_test_result(self, test_datetime, test_name, result):
+        if test_datetime not in self.test_results.keys():
+            self.test_results[test_datetime] = {}
+        self.test_results[test_datetime][test_name] = result
+
+    def getTabulatedTests(self, test_datetime):
+        if test_datetime not in self.test_results.keys():
+            return ''
+        output_string_columns = [test_datetime]
+        date_results = self.test_results[test_datetime]
+        result_order = ['Hb', 'Plt', 'WBC', 'Na', 'K', 'eGFR', 'Cr']
+        for result_name in result_order:
+            if result_name in date_results.keys():
+                output_string_columns.append(date_results[result_name])
+            else:
+                output_string_columns += '-'
+        return '\t'.join(output_string_columns)
+
+class PatientTest:
+
+    def __init__(self):
+        self.datetime = None
+        self.key = None
+        self.value = None
+
+patients = {}
+
+def add_patient(UR, name, DOB):
+    if UR in patients.keys():
+        return patients[UR]
+    else:
+        patient = Patient()
+        patient.UR = UR
+        patient.name = name
+        patient.DOB = DOB
+        patients[UR] = patient
+        return patient
 
 class ClipboardThread(QThread):
     dataSent = pyqtSignal(dict)
@@ -28,12 +92,17 @@ class ClipboardThread(QThread):
                 w32clip.OpenClipboard()
                 running = False
             except pywintypes.error:
+                time.sleep(0.01)
                 continue
 
     def run(self):
         self.openClipboard()
         lastSequenceNumber = w32clip.GetClipboardSequenceNumber()
         w32clip.CloseClipboard()
+        recognizer = auslab.AuslabTemplateRecognizer('G:/workspace/assist-main/templates.dat')
+        test_re = {}
+        for key,regex in TEST_REGEX.items():
+            test_re[key] = re.compile(regex)
         while True:
             time.sleep(0.25)
             self.openClipboard()
@@ -61,7 +130,42 @@ class ClipboardThread(QThread):
                         print("Percentage black: {0}".format(percentage))
                         if percentage >= AUSLAB_MINIMUM_BLACK:
                             print("AUSLAB image identified.")
-                            w32clip.OpenClipboard()
+                            self.openClipboard()
+
+                            ai = auslab.AuslabImage()
+                            ai.loadScreenshotFromPIL(im)
+                            header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
+                            center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
+
+
+
+                            UR = PATIENT_UR_REGEX.search(header_lines[0]).group(1)
+                            name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
+                            DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
+                            collection_time = COLL_REGEX.search(header_lines[0]).group(1)
+
+                            print('UR: {0}'.format(UR))
+                            print('Name: {0}'.format(name))
+                            print('DOB: {0}'.format(DOB))
+                            print('Collection time: {0}'.format(collection_time))
+                            current_patient = add_patient(UR, name, DOB)
+
+                            for line in center_lines:
+                                for tk,tr in TEST_REGEX.items():
+                                    try:
+                                        result = tr.search(line)
+                                        if result is None:
+                                            continue
+                                        result = tr.search(line).group(1)
+                                        current_patient.add_test_result(collection_time, tk, result)
+                                    except IndexError:
+                                        continue
+
+                            print(current_patient.getTabulatedTests(collection_time))
+
+                            # for l in header_lines + center_lines:
+                                # print("'{0}'".format(l))
+
                             w32clip.EmptyClipboard()
                             w32clip.SetClipboardData(w32clip.CF_UNICODETEXT, "Bitmap: {0} x {1}".format(im.size[0], im.size[1]))
                             w32clip.CloseClipboard()
@@ -99,6 +203,8 @@ class Assist(QWidget):
         self.log.appendPlainText('Clipboard event: {0}'.format(data['message']))
 
 def main():
+    # print(sys.path)
+    # ai = auslab.AuslabImage()
     app = QApplication(sys.argv)
     assist = Assist()
     sys.exit(app.exec_())
