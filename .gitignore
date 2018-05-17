@@ -1,4 +1,4 @@
 *.pyc
-env-assist/
+env-main/
 build/
 dist/

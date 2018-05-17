@@ -13,6 +13,10 @@ from PyQt5.QtCore import QDir, QThread, pyqtSignal
 
 from PIL import ImageGrab
 
+import numpy
+import numpy.core
+import numpy.core.multiarray
+
 AUSLAB_MINIMUM_WIDTH = 1008
 AUSLAB_MINIMUM_HEIGHT = 730
 AUSLAB_MINIMUM_BLACK = 80
@@ -57,6 +61,18 @@ class Patient:
                 output_string_columns.append(date_results[result_name])
             else:
                 output_string_columns += '-'
+        return '\t'.join(output_string_columns)
+
+    def getPasteableTests(self, test_datetime):
+        if test_datetime not in self.test_results.keys():
+            return ''
+        date_results = self.test_results[test_datetime]
+        output_string_columns = []
+        output_string_columns.append("{0}/{1}".format(date_results.get('Hb', '-'), date_results.get('Plt', '-')))
+        output_string_columns.append("{0}".format(date_results.get('WBC', '-')))
+        output_string_columns.append("{0}".format(date_results.get('Na', '-')))
+        output_string_columns.append("{0}".format(date_results.get('K', '-')))
+        output_string_columns.append("{0}/{1}".format(date_results.get('eGFR', '-'), date_results.get('Cr', '-')))
         return '\t'.join(output_string_columns)
 
 class PatientTest:
@@ -125,7 +141,7 @@ class ClipboardThread(QThread):
                             for j in range(im_height):
                                 if im.getpixel((i, j)) == (0,0,0):
                                     black_count += 1
-                        print("Black count: {0}", black_count)
+                        print("Black count: {0}".format(black_count))
                         percentage = (black_count / (im_width * im_height)) * 100.0
                         print("Percentage black: {0}".format(percentage))
                         if percentage >= AUSLAB_MINIMUM_BLACK:
@@ -136,8 +152,6 @@ class ClipboardThread(QThread):
                             ai.loadScreenshotFromPIL(im)
                             header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
                             center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
-
-
 
                             UR = PATIENT_UR_REGEX.search(header_lines[0]).group(1)
                             name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
@@ -150,7 +164,11 @@ class ClipboardThread(QThread):
                             print('Collection time: {0}'.format(collection_time))
                             current_patient = add_patient(UR, name, DOB)
 
+                            for line in header_lines:
+                                print(line)
+
                             for line in center_lines:
+                                print(line)
                                 for tk,tr in TEST_REGEX.items():
                                     try:
                                         result = tr.search(line)
@@ -160,14 +178,13 @@ class ClipboardThread(QThread):
                                         current_patient.add_test_result(collection_time, tk, result)
                                     except IndexError:
                                         continue
-
                             print(current_patient.getTabulatedTests(collection_time))
 
                             # for l in header_lines + center_lines:
                                 # print("'{0}'".format(l))
 
                             w32clip.EmptyClipboard()
-                            w32clip.SetClipboardData(w32clip.CF_UNICODETEXT, "Bitmap: {0} x {1}".format(im.size[0], im.size[1]))
+                            w32clip.SetClipboardData(w32clip.CF_UNICODETEXT, current_patient.getPasteableTests(collection_time))
                             w32clip.CloseClipboard()
 
                 self.dataSent.emit({'message' : 'Bitmap became available: {0}, {1}'.format(im.size[0], im.size[1])})
