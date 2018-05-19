@@ -4,6 +4,7 @@
 import sys, time, re, datetime
 import win32clipboard as w32clip
 import pywintypes
+import yaml
 
 import auslab
 
@@ -133,10 +134,18 @@ class ClipboardThread(QThread):
                 continue
 
     def run(self):
+        config = None
+        with open('config.yaml', 'r') as config_file:
+            config = yaml.load(config_file)
+
+        print(config)
+        auslab_config = config['auslab']
+        print(auslab_config)
+
         self.openClipboard()
         lastSequenceNumber = w32clip.GetClipboardSequenceNumber()
         w32clip.CloseClipboard()
-        recognizer = auslab.AuslabTemplateRecognizer('G:/workspace/assist-main/templates.dat')
+        recognizer = auslab.AuslabTemplateRecognizer(auslab_config)
         test_re = {}
         for key,regex in TEST_REGEX.items():
             test_re[key] = re.compile(regex)
@@ -169,7 +178,7 @@ class ClipboardThread(QThread):
                             print("AUSLAB image identified.")
                             self.openClipboard()
 
-                            ai = auslab.AuslabImage()
+                            ai = auslab.AuslabImage(auslab_config)
                             ai.loadScreenshotFromPIL(im)
                             header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
                             center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
