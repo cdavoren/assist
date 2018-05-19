@@ -21,7 +21,6 @@ AUSLAB_MINIMUM_WIDTH = 1008
 AUSLAB_MINIMUM_HEIGHT = 730
 AUSLAB_MINIMUM_BLACK = 80
 
-
 PATIENT_NAME_REGEX = re.compile(r'Name:\s+(.*)DOB:')
 PATIENT_UR_REGEX = re.compile(r'UR No:\s+[A-Z]{2}(\d{6})')
 PATIENT_DOB_REGEX = re.compile(r'DOB:\s+(\d{2}-\w{3}-\d{2})')
@@ -34,8 +33,13 @@ TEST_REGEX = {
     'Na' : re.compile(r'Sodium\s+(\d+)\s+'),
     'K' : re.compile(r'Potassium\s+([0-9\.]+)\s+'),
     'Cr' : re.compile(r'Creatinine\s+(\<?\>?\s*\d+)\s+'),
+    'Mg' : re.compile(r'Magnesium\s+([0-9\.]+)\s+'),
+    'Ca' : re.compile(r'Corr Ca\s+([0-9\.]+)\s+'),
+    'Ph' : re.compile(r'Phosphate\s+([0-9\.]+)\s+'),
     'eGFR' : re.compile(r'eGFR\s+(\<?\>?\s*\d+)\s+'),
 }
+
+useLongForm = False
 
 class Patient:
 
@@ -55,7 +59,7 @@ class Patient:
             return ''
         output_string_columns = [test_datetime]
         date_results = self.test_results[test_datetime]
-        result_order = ['Hb', 'Plt', 'WBC', 'Na', 'K', 'eGFR', 'Cr']
+        result_order = ['Hb', 'Plt', 'WBC', 'Na', 'K', 'eGFR', 'Cr', 'Mg', 'Ca', 'Ph']
         for result_name in result_order:
             if result_name in date_results.keys():
                 output_string_columns.append(date_results[result_name])
@@ -64,16 +68,33 @@ class Patient:
         return '\t'.join(output_string_columns)
 
     def getPasteableTests(self, test_datetime):
+        global useLongForm
         if test_datetime not in self.test_results.keys():
             return ''
         date_results = self.test_results[test_datetime]
-        output_string_columns = []
-        output_string_columns.append("{0}/{1}".format(date_results.get('Hb', '-'), date_results.get('Plt', '-')))
-        output_string_columns.append("{0}".format(date_results.get('WBC', '-')))
-        output_string_columns.append("{0}".format(date_results.get('Na', '-')))
-        output_string_columns.append("{0}".format(date_results.get('K', '-')))
-        output_string_columns.append("{0}/{1}".format(date_results.get('eGFR', '-'), date_results.get('Cr', '-')))
-        return '\t'.join(output_string_columns)
+        if not useLongForm:
+            output_string_columns = []
+            output_string_columns.append("{0}/{1}".format(date_results.get('Hb', '-'), date_results.get('Plt', '-')))
+            output_string_columns.append("{0}".format(date_results.get('WBC', '-')))
+            output_string_columns.append("{0}".format(date_results.get('Na', '-')))
+            output_string_columns.append("{0}".format(date_results.get('K', '-')))
+            output_string_columns.append("{0}/{1}".format(date_results.get('eGFR', '-'), date_results.get('Cr', '-')))
+            return '\t'.join(output_string_columns)
+        else:
+            return "Hb {0}, Plt {1}, WBC {2}\nNa {3}, K {4}, Mg {5}\nCa {6}, Ph {7}\neGFR {8}, Cr {9}".format(
+                date_results.get('Hb', '-'),
+                date_results.get('Plt', '-'),
+                date_results.get('WBC', '-'),
+                date_results.get('Na', '-'),
+                date_results.get('K', '-'),
+                date_results.get('Mg', '-'),
+                date_results.get('Ca', '-'),
+                date_results.get('Ph', '-'),
+                date_results.get('eGFR', '-'),
+                date_results.get('Cr', '-'),
+            )
+            
+
 
 class PatientTest:
 
@@ -179,6 +200,7 @@ class ClipboardThread(QThread):
                                     except IndexError:
                                         continue
                             print(current_patient.getTabulatedTests(collection_time))
+                            print(current_patient.getPasteableTests(collection_time))
 
                             # for l in header_lines + center_lines:
                                 # print("'{0}'".format(l))
@@ -208,16 +230,27 @@ class Assist(QWidget):
         self.setGeometry(300, 300, 300, 220)
         self.setWindowTitle('Assist')
         
+        self.longCheckBox = QCheckBox("Long form")
+        self.longCheckBox.setCheckState(False)
+        self.longCheckBox.toggled.connect(self.handleCheckBox)
+
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
 
         self.layout = QVBoxLayout(self)
+        self.layout.addWidget(self.longCheckBox)
         self.layout.addWidget(self.log)
 
         self.show()
 
     def handleClipboardEvent(self, data):
         self.log.appendPlainText('Clipboard event: {0}'.format(data['message']))
+
+    def handleCheckBox(self, data):
+        global useLongForm
+        print("Toggling checkbox...")
+        useLongForm = self.longCheckBox.isChecked()
+        print('  Long form: {0}'.format(useLongForm))
 
 def main():
     # print(sys.path)
