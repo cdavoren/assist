@@ -1,0 +1,27 @@
+auslab:
+  template_file_path: templates.dat
+  screenshot_y_border_max: 60
+  screenshot_x_border_max: 15
+
+  header_x_start: 56
+  header_y_start: 74
+
+  header_x_end: 979
+  header_y_end: 156
+
+  header_char_num: 77
+  header_line_num: 3
+
+  line_spacing: 7
+
+  line_height: 23
+  char_width: 12
+
+  condensed_line_height: 23
+  condensed_char_width: 8
+
+  central_panel_y_start: 194
+  central_panel_y_end: 668
+
+  f1_normal_template_path: auslab/F1_normal.png
+  f1_condensed_template_path: auslab/F1_condensed.png
