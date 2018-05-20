@@ -47,7 +47,7 @@ class AuslabImageLine:
             self.char_num = char_num
     
     def getCharImages(self):
-        print(self.config)
+        # print(self.config)
         result = []
         char_width = self.config['condensed_char_width'] if self.condensed else self.config['char_width']
         for i in range(self.char_num):
@@ -223,6 +223,8 @@ class AuslabTemplateRecognizer():
     def recognizeChar(self, char_image, condensed):
         if np.max(char_image) > 1.0:
             char_image = char_image / 255.0
+        if np.sum(char_image) == np.size(char_image):
+            return ' '
         templates = self.condensed_templates if condensed else self.normal_templates
 
         min_diff = self.config['char_width'] * self.config['condensed_line_height']

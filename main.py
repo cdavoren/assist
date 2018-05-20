@@ -138,9 +138,9 @@ class ClipboardThread(QThread):
         with open('config.yaml', 'r') as config_file:
             config = yaml.load(config_file)
 
-        print(config)
+        # print(config)
         auslab_config = config['auslab']
-        print(auslab_config)
+        # print(auslab_config)
 
         self.openClipboard()
         lastSequenceNumber = w32clip.GetClipboardSequenceNumber()
