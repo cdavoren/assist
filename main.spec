@@ -10,7 +10,13 @@ f1_normal = os.path.join(AUSLAB_DIR, 'F1_normal.png')
 a = Analysis(['main.py'],
              pathex=['G:\\workspace\\assist-main'],
              binaries=[],
-             datas=[('config.yaml', '.'), ('templates.dat', '.'), (f1_condensed, AUSLAB_DIR), (f1_normal, AUSLAB_DIR)],
+             datas=[
+                ('main.ico', '.'), 
+                ('config.yaml', '.'), 
+                ('templates.dat', '.'), 
+                (f1_condensed, AUSLAB_DIR), 
+                (f1_normal, AUSLAB_DIR)
+                ],
              hiddenimports=['PIL'],
              hookspath=[],
              runtime_hooks=[],
@@ -27,6 +33,7 @@ exe = EXE(pyz,
           debug=False,
           strip=False,
           upx=False,
+          icon='main.ico',
           console=True )
 coll = COLLECT(exe,
                a.binaries,

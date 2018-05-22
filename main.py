@@ -28,9 +28,9 @@ PATIENT_DOB_REGEX = re.compile(r'DOB:\s+(\d{2}-\w{3}-\d{2})')
 COLL_REGEX = re.compile(r'Coll:\s+(\d{2}:\d{2}\s+\d{2}-\w{3}-\d{2})')
 
 TEST_REGEX = {
-    'Hb' : re.compile(r'Hgb\s+:\s+(\d+)\s+[ HL]'),
-    'WBC' : re.compile(r'[EW]BC\s+:\s+([0-9\.]+)\s+[ HL]'),
-    'Plt' : re.compile(r'PLT\s+:\s+(\d+)\s+[ HL]'),
+    'Hb' : re.compile(r'Hgb\s+:\s+(\d+)\s+[ HLC]'),
+    'WBC' : re.compile(r'[EW]BC\s+:\s+([0-9\.]+)\s+[ HLC]'),
+    'Plt' : re.compile(r'PLT\s+:\s+(\d+)\s+[ HLC]'),
     'Na' : re.compile(r'Sodium\s+(\d+)\s+'),
     'K' : re.compile(r'Potassium\s+([0-9\.]+)\s+'),
     'Cr' : re.compile(r'Creatinine\s+(\<?\>?\s*\d+)\s+'),
@@ -238,6 +238,7 @@ class Assist(QWidget):
         print("*** initUI ***")
         self.setGeometry(300, 300, 300, 220)
         self.setWindowTitle('Assist')
+        self.setWindowIcon(QIcon('main.ico'))
         
         self.longCheckBox = QCheckBox("Long form")
         self.longCheckBox.setCheckState(False)
