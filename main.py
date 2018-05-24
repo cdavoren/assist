@@ -188,7 +188,9 @@ class ProcessClipboardImageThread(QThread):
                                 continue
                     print(current_patient.getTabulatedTests(collection_time))
                     print(current_patient.getPasteableTests(collection_time))
+                    self.dataSent.emit({'title':'Assist', 'message':'AUSLAB image processed'})
                     return
+        self.dataSent.emit({'title':'Assist', 'message':'Not an AUSLAB image'})
         print('Not an AUSLAB image.')
 
 
@@ -198,17 +200,14 @@ class Assist(QWidget):
         super().__init__()
         self.initUI()
 
-        # self._clipThread = ClipboardThread()
-        # self._clipThread.dataSent.connect(self.handleClipboardEvent)
-        # self._clipThread.start()
-
     def initUI(self):
         print("*** initUI ***")
+        self.mainIcon = QIcon('main.ico')
         self.setGeometry(300, 300, 300, 220)
         self.setWindowTitle('Assist')
-        self.setWindowIcon(QIcon('main.ico'))
+        self.setWindowIcon(self.mainIcon)
         
-        self.longCheckBox = QCheckBox("Long form")
+        self.longCheckBox = QCheckBox("&Long form")
         self.longCheckBox.setCheckState(False)
         self.longCheckBox.toggled.connect(self.handleCheckBox)
 
@@ -219,12 +218,16 @@ class Assist(QWidget):
         self.layout.addWidget(self.longCheckBox)
         self.layout.addWidget(self.log)
 
+        self.trayIcon = QSystemTrayIcon(self)
+        self.trayIcon.setIcon(self.mainIcon)
+        self.trayIcon.show()
+
         QApplication.clipboard().dataChanged.connect(self.handleClipboardChanged)
 
         self.show()
 
-    # def handleClipboardEvent(self, data):
-        # self.log.appendPlainText('Clipboard event: {0}'.format(data['message']))
+    def handleProcessMessage(self, message_dict):
+        self.trayIcon.showMessage(message_dict['title'], message_dict['message'], 3000)
 
     def handleClipboardChanged(self):
         print("Clipboard changed.")
@@ -232,8 +235,8 @@ class Assist(QWidget):
         if qimage.isNull():
             return
         self.processThread = ProcessClipboardImageThread(qimage)
+        self.processThread.dataSent.connect(self.handleProcessMessage)
         self.processThread.start()
-        
 
     def handleCheckBox(self, data):
         global useLongForm
@@ -245,6 +248,7 @@ def main():
     # print(sys.path)
     # ai = auslab.AuslabImage()
     app = QApplication(sys.argv)
+    QApplication.setApplicationName('Assist')
     assist = Assist()
     sys.exit(app.exec_())
 
