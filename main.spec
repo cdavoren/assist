@@ -17,7 +17,7 @@ a = Analysis(['main.py'],
                 (f1_condensed, AUSLAB_DIR), 
                 (f1_normal, AUSLAB_DIR)
                 ],
-             hiddenimports=['PIL'],
+             hiddenimports=['PIL', 'yaml'],
              hookspath=[],
              runtime_hooks=[],
              excludes=[],
