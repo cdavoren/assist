@@ -12,11 +12,8 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import QDir, QThread, pyqtSignal
 
-from PIL import ImageGrab
-
-import numpy
-import numpy.core
-import numpy.core.multiarray
+import numpy as np
+import cv2
 
 AUSLAB_MINIMUM_WIDTH = 1008
 AUSLAB_MINIMUM_HEIGHT = 730
@@ -94,8 +91,6 @@ class Patient:
                 date_results.get('eGFR', '-'),
                 date_results.get('Cr', '-'),
             )
-            
-
 
 class PatientTest:
 
@@ -117,23 +112,15 @@ def add_patient(UR, name, DOB):
         patients[UR] = patient
         return patient
 
-class ClipboardThread(QThread):
+class ProcessClipboardImageThread(QThread):
     dataSent = pyqtSignal(dict)
 
-    def __init__(self):
+    def __init__(self, qimage):
         super().__init__()
-
-    def openClipboard(self):
-        running = True
-        while running:
-            try:
-                w32clip.OpenClipboard()
-                running = False
-            except pywintypes.error:
-                time.sleep(0.01)
-                continue
+        self.qimage = qimage
 
     def run(self):
+        print('*** ProcessClipboardImageThread ***')
         config = None
         with open('config.yaml', 'r') as config_file:
             config = yaml.load(config_file)
@@ -141,87 +128,68 @@ class ClipboardThread(QThread):
         # print(config)
         auslab_config = config['auslab']
         # print(auslab_config)
-
-        self.openClipboard()
-        lastSequenceNumber = w32clip.GetClipboardSequenceNumber()
-        w32clip.CloseClipboard()
         recognizer = auslab.AuslabTemplateRecognizer(auslab_config)
-        test_re = {}
-        for key,regex in TEST_REGEX.items():
-            test_re[key] = re.compile(regex)
-        while True:
-            time.sleep(0.25)
-            self.openClipboard()
-            sequenceNumber = w32clip.GetClipboardSequenceNumber()
-            if sequenceNumber == lastSequenceNumber:
-                w32clip.CloseClipboard()
-                continue
 
-            lastSequenceNumber = sequenceNumber
+        self.qimage = self.qimage.convertToFormat(QImage.Format_RGB32)
+        im_width = self.qimage.width()
+        im_height = self.qimage.height()
 
-            if w32clip.IsClipboardFormatAvailable(w32clip.CF_BITMAP):
-                im = ImageGrab.grabclipboard()
-                # Check to see if it's an AUSLAB image
-                im_width = im.size[0]
-                im_height = im.size[1]
-                if im_width >= AUSLAB_MINIMUM_WIDTH and im_width < AUSLAB_MINIMUM_WIDTH + 20:
-                    if im_height >= AUSLAB_MINIMUM_HEIGHT and im_height < AUSLAB_MINIMUM_HEIGHT + 50:
-                        black_count = 0
-                        for i in range(im_width):
-                            for j in range(im_height):
-                                if im.getpixel((i, j)) == (0,0,0):
-                                    black_count += 1
-                        print("Black count: {0}".format(black_count))
-                        percentage = (black_count / (im_width * im_height)) * 100.0
-                        print("Percentage black: {0}".format(percentage))
-                        if percentage >= AUSLAB_MINIMUM_BLACK:
-                            print("AUSLAB image identified.")
-                            self.openClipboard()
+        # print(self.qimage.byteCount())
+        ptr = self.qimage.bits()
+        ptr.setsize(self.qimage.byteCount())
+        im = np.array(ptr).reshape(im_height, im_width, 4)
 
-                            ai = auslab.AuslabImage(auslab_config)
-                            ai.loadScreenshotFromPIL(im)
-                            header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
-                            center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
+        # print(np.size(im))
+        # print(np.shape(im))
+        if im_width >= AUSLAB_MINIMUM_WIDTH and im_width < AUSLAB_MINIMUM_WIDTH + 20:
+            if im_height >= AUSLAB_MINIMUM_HEIGHT and im_height < AUSLAB_MINIMUM_HEIGHT + 50:
 
-                            UR = PATIENT_UR_REGEX.search(header_lines[0]).group(1)
-                            name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
-                            DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
-                            collection_time = COLL_REGEX.search(header_lines[0]).group(1)
+                image_grey = cv2.cvtColor(im, cv2.COLOR_RGBA2GRAY)
+                image_inverted = cv2.bitwise_not(image_grey)
+                _, image_thresh = cv2.threshold(image_inverted, 240, 255, 0)
 
-                            print('UR: {0}'.format(UR))
-                            print('Name: {0}'.format(name))
-                            print('DOB: {0}'.format(DOB))
-                            print('Collection time: {0}'.format(collection_time))
-                            current_patient = add_patient(UR, name, DOB)
+                # print(cv2.countNonZero(image_thresh))
+                black_count = cv2.countNonZero(image_thresh)
+                # print("Black count: {0}".format(black_count))
+                percentage = (black_count / (im_width * im_height)) * 100.0
+                # print("Percentage black: {0}".format(percentage))
+                if percentage >= AUSLAB_MINIMUM_BLACK:
+                    print("AUSLAB image identified.")
 
-                            for line in header_lines:
-                                print(line)
+                    ai = auslab.AuslabImage(auslab_config)
+                    ai.loadScreenshot(im)
+                    header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
+                    center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
 
-                            for line in center_lines:
-                                print(line)
-                                for tk,tr in TEST_REGEX.items():
-                                    try:
-                                        result = tr.search(line)
-                                        if result is None:
-                                            continue
-                                        result = tr.search(line).group(1)
-                                        current_patient.add_test_result(collection_time, tk, result)
-                                    except IndexError:
-                                        continue
-                            print(current_patient.getTabulatedTests(collection_time))
-                            print(current_patient.getPasteableTests(collection_time))
+                    UR = PATIENT_UR_REGEX.search(header_lines[0]).group(1)
+                    name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
+                    DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
+                    collection_time = COLL_REGEX.search(header_lines[0]).group(1)
 
-                            # for l in header_lines + center_lines:
-                                # print("'{0}'".format(l))
+                    print('UR: {0}'.format(UR))
+                    print('Name: {0}'.format(name))
+                    print('DOB: {0}'.format(DOB))
+                    print('Collection time: {0}'.format(collection_time))
+                    current_patient = add_patient(UR, name, DOB)
 
-                            w32clip.EmptyClipboard()
-                            w32clip.SetClipboardData(w32clip.CF_UNICODETEXT, current_patient.getPasteableTests(collection_time))
-                            w32clip.CloseClipboard()
+                    for line in header_lines:
+                        print(line)
 
-                self.dataSent.emit({'message' : 'Bitmap became available: {0}, {1}'.format(im.size[0], im.size[1])})
-            else:
-                self.dataSent.emit({'message' : 'Bitmap became unavailable.'})
-                w32clip.CloseClipboard()
+                    for line in center_lines:
+                        print(line)
+                        for tk,tr in TEST_REGEX.items():
+                            try:
+                                result = tr.search(line)
+                                if result is None:
+                                    continue
+                                result = tr.search(line).group(1)
+                                current_patient.add_test_result(collection_time, tk, result)
+                            except IndexError:
+                                continue
+                    print(current_patient.getTabulatedTests(collection_time))
+                    print(current_patient.getPasteableTests(collection_time))
+                    return
+        print('Not an AUSLAB image.')
 
 
 class Assist(QWidget):
@@ -230,9 +198,9 @@ class Assist(QWidget):
         super().__init__()
         self.initUI()
 
-        self._clipThread = ClipboardThread()
-        self._clipThread.dataSent.connect(self.handleClipboardEvent)
-        self._clipThread.start()
+        # self._clipThread = ClipboardThread()
+        # self._clipThread.dataSent.connect(self.handleClipboardEvent)
+        # self._clipThread.start()
 
     def initUI(self):
         print("*** initUI ***")
@@ -251,10 +219,21 @@ class Assist(QWidget):
         self.layout.addWidget(self.longCheckBox)
         self.layout.addWidget(self.log)
 
+        QApplication.clipboard().dataChanged.connect(self.handleClipboardChanged)
+
         self.show()
 
-    def handleClipboardEvent(self, data):
-        self.log.appendPlainText('Clipboard event: {0}'.format(data['message']))
+    # def handleClipboardEvent(self, data):
+        # self.log.appendPlainText('Clipboard event: {0}'.format(data['message']))
+
+    def handleClipboardChanged(self):
+        print("Clipboard changed.")
+        qimage = QApplication.clipboard().image()
+        if qimage.isNull():
+            return
+        self.processThread = ProcessClipboardImageThread(qimage)
+        self.processThread.start()
+        
 
     def handleCheckBox(self, data):
         global useLongForm

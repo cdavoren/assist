@@ -223,7 +223,9 @@ class AuslabTemplateRecognizer():
     def recognizeChar(self, char_image, condensed):
         if np.max(char_image) > 1.0:
             char_image = char_image / 255.0
-        if np.sum(char_image) == np.size(char_image):
+        # if np.sum(char_image) == np.size(char_image):
+            # return ' '
+        if cv2.countNonZero(char_image) == np.size(char_image):
             return ' '
         templates = self.condensed_templates if condensed else self.normal_templates
 
