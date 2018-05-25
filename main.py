@@ -15,6 +15,8 @@ from PyQt5.QtCore import QDir, QThread, pyqtSignal
 import numpy as np
 import cv2
 
+import keyboard
+
 AUSLAB_MINIMUM_WIDTH = 1008
 AUSLAB_MINIMUM_HEIGHT = 730
 AUSLAB_MINIMUM_BLACK = 80
@@ -247,6 +249,8 @@ class Assist(QWidget):
 def main():
     # print(sys.path)
     # ai = auslab.AuslabImage()
+    keyboard.add_hotkey('ctrl+shift+a', print, args=('triggered', 'hotkey'))
+
     app = QApplication(sys.argv)
     QApplication.setApplicationName('Assist')
     assist = Assist()
