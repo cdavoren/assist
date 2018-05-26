@@ -127,7 +127,7 @@ class AuslabImage:
         x_max = dimensions[1] - 1
         y_max = dimensions[0] - 1
 
-        print('{0} x {1}'.format(self.config['screenshot_x_border_max'],self.config['screenshot_y_border_max']))
+        # print('{0} x {1}'.format(self.config['screenshot_x_border_max'],self.config['screenshot_y_border_max']))
 
         try:
             while self.input_image[self.config['screenshot_y_border_max']][x_min][0] != 0:
