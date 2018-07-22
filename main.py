@@ -1,11 +1,11 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import sys, time, re, datetime, queue, html
+import sys, time, re, datetime, queue, html, sqlite3
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
-from PyQt5.QtCore import QDir, QThread, QMutex, pyqtSignal
+from PyQt5.QtCore import QDir, QThread, QMutex, pyqtSignal, Qt
 
 import auslab
 
@@ -36,8 +36,6 @@ TEST_REGEX = {
     'Ph' : re.compile(r'Phosphate\s+([0-9\.]+)\s+'),
     'eGFR' : re.compile(r'eGFR\s+(\<?\>?\s*\d+)\s+'),
 }
-
-useLongForm = False
 
 class Patient:
 
@@ -98,22 +96,42 @@ class PatientTest:
         self.key = None
         self.value = None
 
-patients = {}
+class PatientDatabase():
+    log = pyqtSignal(str)
 
-def add_patient(UR, name, DOB):
-    if UR in patients.keys():
-        return patients[UR]
-    else:
-        patient = Patient()
-        patient.UR = UR
-        patient.name = name
-        patient.DOB = DOB
-        patients[UR] = patient
-        return patient
+    def __init__(self, db_path):
+        self.patients = {}
+        self.db_path = db_path
+        self.db_lock = QMutex()
+
+    def save(self):
+        self.db_lock.lock()
+        for UR, data in self.patients.items():
+            self.log.emit('{0}'.format(UR))
+        self.db_lock.unlock()
+
+    def add_patient(self, UR, name, DOB):
+        if UR in self.patients.keys():
+            return self.patients[UR]
+        else:
+            patient = Patient()
+            patient.UR = UR
+            patient.name = name
+            patient.DOB = DOB
+            self.patients[UR] = patient
+            return patient
+
+class LabTest:
+
+    def __init__(self, lab_number = None, patient = None, tests = []):
+        self.lab_number = lab_number
+        self.patient = patient
+        self.tests = tests
 
 class ProcessClipboardImageThread(QThread):
     log = pyqtSignal(str)
     message = pyqtSignal(str)
+    clipboard = pyqtSignal(str)
 
     def __init__(self, app):
         super().__init__()
@@ -121,6 +139,7 @@ class ProcessClipboardImageThread(QThread):
         self.app = app
         self.image_queue = self.app.image_queue
         self.image_queue_lock = self.app.image_queue_lock
+        self.patient_db = PatientDatabase('patients.sqlite3')
 
     def run(self):
         self.log.emit('*** ProcessClipboardImageThread started ***')
@@ -189,7 +208,7 @@ class ProcessClipboardImageThread(QThread):
                         self.log.emit('Name: {0}'.format(name))
                         self.log.emit('DOB: {0}'.format(DOB))
                         self.log.emit('Collection time: {0}'.format(collection_time))
-                        current_patient = add_patient(UR, name, DOB)
+                        current_patient = self.patient_db.add_patient(UR, name, DOB)
 
                         for line in header_lines:
                             self.log.emit(line)
@@ -207,6 +226,7 @@ class ProcessClipboardImageThread(QThread):
                                     continue
                         self.log.emit(current_patient.getTabulatedTests(collection_time))
                         self.log.emit(current_patient.getPasteableTests(collection_time, self.app.useLongForm))
+                        self.clipboard.emit(current_patient.getPasteableTests(collection_time, self.app.useLongForm))
                         self.message.emit('AUSLAB image processed')
                         continue
             self.message.emit('Not an AUSLAB image')
@@ -250,9 +270,18 @@ class Assist(QWidget):
         self.image_processing_thread = ProcessClipboardImageThread(self)
         self.image_processing_thread.message.connect(self.handleProcessMessage)
         self.image_processing_thread.log.connect(self.handleClipboardLog)
+        self.image_processing_thread.clipboard.connect(self.handleClipboardMessage)
         self.image_processing_thread.start()
 
+        # self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.show()
+
+        # print(self.x())
+        # print(self.y())
+        # print(self.geometry().x())
+        # print(self.geometry().y())
+        # print(self.geometry().width())
+        # print(self.frameGeometry().width())
 
     def handleProcessMessage(self, message_str):
         self.logMessage('Message signal')
@@ -283,14 +312,34 @@ class Assist(QWidget):
         self.log.insertHtml('<span style="color: #888888">[{0}]</span> {1}<br />'.format(datestr, html.escape(message)))
         self.log_lock.unlock()
 
+    def handleClipboardMessage(self, content):
+        cp = QApplication.clipboard()
+        cp.setText(content, cp.Clipboard)
+
+    def closeEvent(self, event):
+        self.trayIcon.hide()
+
+    def bringFocus(self):
+        current_flags = self.windowFlags()
+        self.setWindowFlags(current_flags | Qt.WindowStaysOnTopHint)
+        # self.activateWindow()
+        # self.windowHandle().requestActivate()
+        self.show()
+        self.setWindowFlags(current_flags)
+        self.show()
+
+def bringFocus(assist):
+    print("Bring focus called...")
+    assist.bringFocus()
+
 def main():
     # print(sys.path)
     # ai = auslab.AuslabImage()
-    keyboard.add_hotkey('ctrl+shift+a', print, args=('triggered', 'hotkey'))
 
     app = QApplication(sys.argv)
     QApplication.setApplicationName('Assist')
     assist = Assist()
+    keyboard.add_hotkey('ctrl+shift+a', bringFocus, args=(assist,))
     sys.exit(app.exec_())
 
 if __name__ == '__main__':
