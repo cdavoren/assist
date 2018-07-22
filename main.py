@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import sys, time, re, datetime, queue, html, sqlite3
+import sys, time, re, datetime, queue, html, sqlite3, configparser
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -22,6 +22,7 @@ AUSLAB_MINIMUM_BLACK = 80
 PATIENT_NAME_REGEX = re.compile(r'Name:\s+(.*)DOB:')
 PATIENT_UR_REGEX = re.compile(r'UR No:\s+[A-Z]{2}(\d{6})')
 PATIENT_DOB_REGEX = re.compile(r'DOB:\s+(\d{2}-\w{3}-\d{2})')
+LAB_NO_REGEX = re.compile(r'Lab No:\s+([0-9\-]+)')
 COLL_REGEX = re.compile(r'Coll:\s+(\d{2}:\d{2}\s+\d{2}-\w{3}-\d{2})')
 
 TEST_REGEX = {
@@ -35,7 +36,31 @@ TEST_REGEX = {
     'Ca' : re.compile(r'Corr Ca\s+([0-9\.]+)\s+'),
     'Ph' : re.compile(r'Phosphate\s+([0-9\.]+)\s+'),
     'eGFR' : re.compile(r'eGFR\s+(\<?\>?\s*\d+)\s+'),
+    'CRP' : re.compile(r'CRP\s+(\d+)'),
 }
+
+test_database = None
+
+class Configuration:
+
+    instance = None
+
+    def __init__(self, config_filename):
+        self.config = configparser.ConfigParser()
+        self.config.read(config_filename)
+
+    @staticmethod
+    def current():
+        if Configuration.instance is None:
+            Configuration.instance = Configuration('config.ini')
+        return Configuration.instance.config
+
+class LabTest:
+
+    def __init__(self, lab_number = None, test_datetime = None, tests = {}): 
+        self.lab_number = lab_number
+        self.test_datetime = test_datetime
+        self.tests = tests
 
 class Patient:
 
@@ -43,58 +68,52 @@ class Patient:
         self.name = None
         self.UR = None
         self.DOB = None
-        self.test_results = {}
+        self.lab_results = {}
 
-    def add_test_result(self, test_datetime, test_name, result):
-        if test_datetime not in self.test_results.keys():
-            self.test_results[test_datetime] = {}
-        self.test_results[test_datetime][test_name] = result
+    def add_test_result(self, lab_number, test_datetime, test_name, result):
+        if lab_number not in self.lab_results.keys():
+            self.lab_results[lab_number] = LabTest(lab_number, test_datetime, {})
+        self.lab_results[lab_number].tests[test_name] = result
 
-    def getTabulatedTests(self, test_datetime):
-        if test_datetime not in self.test_results.keys():
+    def getTabulatedTests(self, lab_number):
+        if lab_number not in self.lab_results.keys():
             return ''
-        output_string_columns = [test_datetime]
-        date_results = self.test_results[test_datetime]
-        result_order = ['Hb', 'Plt', 'WBC', 'Na', 'K', 'eGFR', 'Cr', 'Mg', 'Ca', 'Ph']
-        for result_name in result_order:
-            if result_name in date_results.keys():
-                output_string_columns.append(date_results[result_name])
+        output_string_columns = [self.lab_results[lab_number].test_datetime]
+        test_results = self.lab_results[lab_number].tests
+        test_order = ['Hb', 'Plt', 'WBC', 'Na', 'K', 'eGFR', 'Cr', 'Mg', 'Ca', 'Ph']
+        for test_name in test_order:
+            if test_name in test_results.keys():
+                output_string_columns.append(test_results[test_name])
             else:
                 output_string_columns += '-'
         return '\t'.join(output_string_columns)
 
-    def getPasteableTests(self, test_datetime, useLongForm):
-        if test_datetime not in self.test_results.keys():
+    def getPasteableTests(self, lab_number, useLongForm):
+        if lab_number not in self.lab_results.keys():
             return ''
-        date_results = self.test_results[test_datetime]
+        lab_tests = self.lab_results[lab_number].tests
         if not useLongForm:
             output_string_columns = []
-            output_string_columns.append("{0}/{1}".format(date_results.get('Hb', '-'), date_results.get('Plt', '-')))
-            output_string_columns.append("{0}".format(date_results.get('WBC', '-')))
-            output_string_columns.append("{0}".format(date_results.get('Na', '-')))
-            output_string_columns.append("{0}".format(date_results.get('K', '-')))
-            output_string_columns.append("{0}/{1}".format(date_results.get('eGFR', '-'), date_results.get('Cr', '-')))
+            output_string_columns.append("{0}/{1}".format(lab_tests.get('Hb', '-'), lab_tests.get('Plt', '-')))
+            output_string_columns.append("{0}".format(lab_tests.get('WBC', '-')))
+            output_string_columns.append("{0}".format(lab_tests.get('Na', '-')))
+            output_string_columns.append("{0}".format(lab_tests.get('K', '-')))
+            output_string_columns.append("{0}/{1}".format(lab_tests.get('eGFR', '-'), lab_tests.get('Cr', '-')))
             return '\t'.join(output_string_columns)
         else:
-            return "- Hb {0}, Plt {1}, WBC {2}\n- Na {3}, K {4}, Mg {5}\n- Ca {6}, Ph {7}\n- eGFR {8}, Cr {9}".format(
-                date_results.get('Hb', '-'),
-                date_results.get('Plt', '-'),
-                date_results.get('WBC', '-'),
-                date_results.get('Na', '-'),
-                date_results.get('K', '-'),
-                date_results.get('Mg', '-'),
-                date_results.get('Ca', '-'),
-                date_results.get('Ph', '-'),
-                date_results.get('eGFR', '-'),
-                date_results.get('Cr', '-'),
+            return "- Hb {0}, Plt {1}, WBC {2}\n- Na {3}, K {4}, Mg {5}\n- Ca {6}, Ph {7}\n- eGFR {8}, Cr {9}\n- CRP {10}".format(
+                lab_tests.get('Hb', '-'),
+                lab_tests.get('Plt', '-'),
+                lab_tests.get('WBC', '-'),
+                lab_tests.get('Na', '-'),
+                lab_tests.get('K', '-'),
+                lab_tests.get('Mg', '-'),
+                lab_tests.get('Ca', '-'),
+                lab_tests.get('Ph', '-'),
+                lab_tests.get('eGFR', '-'),
+                lab_tests.get('Cr', '-'),
+                lab_tests.get('CRP', '-')
             )
-
-class PatientTest:
-
-    def __init__(self):
-        self.datetime = None
-        self.key = None
-        self.value = None
 
 class PatientDatabase():
     log = pyqtSignal(str)
@@ -111,22 +130,19 @@ class PatientDatabase():
         self.db_lock.unlock()
 
     def add_patient(self, UR, name, DOB):
+        self.db_lock.lock()
         if UR in self.patients.keys():
-            return self.patients[UR]
+            patient = self.patients[UR]
+            self.db_lock.unlock()
+            return patient
         else:
             patient = Patient()
             patient.UR = UR
             patient.name = name
             patient.DOB = DOB
             self.patients[UR] = patient
+            self.db_lock.unlock()
             return patient
-
-class LabTest:
-
-    def __init__(self, lab_number = None, patient = None, tests = []):
-        self.lab_number = lab_number
-        self.patient = patient
-        self.tests = tests
 
 class ProcessClipboardImageThread(QThread):
     log = pyqtSignal(str)
@@ -139,7 +155,7 @@ class ProcessClipboardImageThread(QThread):
         self.app = app
         self.image_queue = self.app.image_queue
         self.image_queue_lock = self.app.image_queue_lock
-        self.patient_db = PatientDatabase('patients.sqlite3')
+        self.patient_db = PatientDatabase(Configuration.current()['main']['database_path'])
 
     def run(self):
         self.log.emit('*** ProcessClipboardImageThread started ***')
@@ -203,11 +219,13 @@ class ProcessClipboardImageThread(QThread):
                         name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
                         DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
                         collection_time = COLL_REGEX.search(header_lines[0]).group(1)
+                        lab_number = LAB_NO_REGEX.search(header_lines[0]).group(1)
 
                         self.log.emit('UR: {0}'.format(UR))
                         self.log.emit('Name: {0}'.format(name))
                         self.log.emit('DOB: {0}'.format(DOB))
                         self.log.emit('Collection time: {0}'.format(collection_time))
+                        self.log.emit('Lab No: {0}'.format(lab_number))
                         current_patient = self.patient_db.add_patient(UR, name, DOB)
 
                         for line in header_lines:
@@ -221,12 +239,12 @@ class ProcessClipboardImageThread(QThread):
                                     if result is None:
                                         continue
                                     result = tr.search(line).group(1)
-                                    current_patient.add_test_result(collection_time, tk, result)
+                                    current_patient.add_test_result(lab_number, collection_time, tk, result)
                                 except IndexError:
                                     continue
-                        self.log.emit(current_patient.getTabulatedTests(collection_time))
-                        self.log.emit(current_patient.getPasteableTests(collection_time, self.app.useLongForm))
-                        self.clipboard.emit(current_patient.getPasteableTests(collection_time, self.app.useLongForm))
+                        self.log.emit(current_patient.getTabulatedTests(lab_number))
+                        self.log.emit(current_patient.getPasteableTests(lab_number, self.app.useLongForm))
+                        self.clipboard.emit(current_patient.getPasteableTests(lab_number, self.app.useLongForm))
                         self.message.emit('AUSLAB image processed')
                         continue
             self.message.emit('Not an AUSLAB image')
@@ -335,6 +353,9 @@ def bringFocus(assist):
 def main():
     # print(sys.path)
     # ai = auslab.AuslabImage()
+
+    config = Configuration.current()
+    db_path = config['main']['database_path']
 
     app = QApplication(sys.argv)
     QApplication.setApplicationName('Assist')
