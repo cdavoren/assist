@@ -1,11 +1,11 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import sys, time, re, datetime, queue, html, sqlite3, configparser
+import sys, os, time, re, datetime, queue, html, sqlite3, configparser
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
-from PyQt5.QtCore import QDir, QThread, QMutex, pyqtSignal, Qt
+from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt
 
 import auslab
 
@@ -14,6 +14,8 @@ import cv2
 
 import keyboard
 import yaml
+
+from peewee import *
 
 AUSLAB_MINIMUM_WIDTH = 1008
 AUSLAB_MINIMUM_HEIGHT = 730
@@ -37,9 +39,14 @@ TEST_REGEX = {
     'Ph' : re.compile(r'Phosphate\s+([0-9\.]+)\s+'),
     'eGFR' : re.compile(r'eGFR\s+(\<?\>?\s*\d+)\s+'),
     'CRP' : re.compile(r'CRP\s+(\d+)'),
+    'AST' : re.compile(r'AST\s+(\d+)'),
+    'ALT' : re.compile(r'ALT\s+(\d+)'),
+    'GGT' : re.compile(r'Gamma GT\s+(\d+)'),
+    'ALP' : re.compile(r'ALP\s+(\d+)'),
+    'LD' : re.compile(r'LD\s+(\d+)'),
 }
 
-test_database = None
+database_proxy = Proxy()
 
 class Configuration:
 
@@ -55,94 +62,146 @@ class Configuration:
             Configuration.instance = Configuration('config.ini')
         return Configuration.instance.config
 
-class LabTest:
-
-    def __init__(self, lab_number = None, test_datetime = None, tests = {}): 
-        self.lab_number = lab_number
-        self.test_datetime = test_datetime
-        self.tests = tests
-
-class Patient:
-
-    def __init__(self):
-        self.name = None
-        self.UR = None
-        self.DOB = None
-        self.lab_results = {}
+class BaseModel(Model):
+    class Meta:
+        database = database_proxy
+        
+class Patient(BaseModel):
+    UR = CharField()
+    name = CharField()
+    DOB = CharField()
 
     def add_test_result(self, lab_number, test_datetime, test_name, result):
-        if lab_number not in self.lab_results.keys():
-            self.lab_results[lab_number] = LabTest(lab_number, test_datetime, {})
-        self.lab_results[lab_number].tests[test_name] = result
+        lab_test_group = None
+        try:
+            lab_test_group = self.lab_test_groups.select().where(LabTestGroup.lab_number == lab_number).get()
+        except LabTestGroup.DoesNotExist:
+            lab_test_group = LabTestGroup(patient=self, lab_number=lab_number, datetime=test_datetime)
+            lab_test_group.save()
+
+        try:
+            lab_test = lab_test_group.lab_tests.select().where(LabTest.name == test_name).get()
+            return
+        except LabTest.DoesNotExist:
+            lab_test = LabTest(lab_test_group=lab_test_group, name=test_name, value=result)
+            lab_test.save()
 
     def getTabulatedTests(self, lab_number):
-        if lab_number not in self.lab_results.keys():
+        lab_test_group = None
+        try:
+            lab_test_group = self.lab_test_groups.select().where(LabTestGroup.lab_number == lab_number).get()
+        except LabTestGroup.DoesNotExist:
             return ''
-        output_string_columns = [self.lab_results[lab_number].test_datetime]
-        test_results = self.lab_results[lab_number].tests
+
+        lab_test_results = {}
+        for lab_test in lab_test_group.lab_tests.select():
+            lab_test_results[lab_test.name] = lab_test.value
+
+        output_string_columns = [lab_test_group.datetime]
         test_order = ['Hb', 'Plt', 'WBC', 'Na', 'K', 'eGFR', 'Cr', 'Mg', 'Ca', 'Ph']
         for test_name in test_order:
-            if test_name in test_results.keys():
-                output_string_columns.append(test_results[test_name])
+            if test_name in lab_test_results.keys():
+                output_string_columns.append(lab_test_results[test_name])
             else:
                 output_string_columns += '-'
         return '\t'.join(output_string_columns)
 
     def getPasteableTests(self, lab_number, useLongForm):
-        if lab_number not in self.lab_results.keys():
+        lab_tes_group = None
+        try:
+            lab_test_group = self.lab_test_groups.select().where(LabTestGroup.lab_number == lab_number).get()
+        except LabTestGroup.DoesNotExist:
+            # print('No lab results exist for the given lab number {}'.format(lab_number))
             return ''
-        lab_tests = self.lab_results[lab_number].tests
-        if not useLongForm:
-            output_string_columns = []
-            output_string_columns.append("{0}/{1}".format(lab_tests.get('Hb', '-'), lab_tests.get('Plt', '-')))
-            output_string_columns.append("{0}".format(lab_tests.get('WBC', '-')))
-            output_string_columns.append("{0}".format(lab_tests.get('Na', '-')))
-            output_string_columns.append("{0}".format(lab_tests.get('K', '-')))
-            output_string_columns.append("{0}/{1}".format(lab_tests.get('eGFR', '-'), lab_tests.get('Cr', '-')))
-            return '\t'.join(output_string_columns)
-        else:
-            return "- Hb {0}, Plt {1}, WBC {2}\n- Na {3}, K {4}, Mg {5}\n- Ca {6}, Ph {7}\n- eGFR {8}, Cr {9}\n- CRP {10}".format(
-                lab_tests.get('Hb', '-'),
-                lab_tests.get('Plt', '-'),
-                lab_tests.get('WBC', '-'),
-                lab_tests.get('Na', '-'),
-                lab_tests.get('K', '-'),
-                lab_tests.get('Mg', '-'),
-                lab_tests.get('Ca', '-'),
-                lab_tests.get('Ph', '-'),
-                lab_tests.get('eGFR', '-'),
-                lab_tests.get('Cr', '-'),
-                lab_tests.get('CRP', '-')
-            )
 
-class PatientDatabase():
+        lab_tests = {}
+        for lab_test in lab_test_group.lab_tests:
+            lab_tests[lab_test.name] = lab_test.value
+
+        output_string = ''
+        if not useLongForm:
+            output_string = '\t'.join([
+                "{hb}/{platelets}",
+                "{wbc}",
+                "{sodium}",
+                "{potassium}",
+                "{egfr}/{creatinine}",
+            ])
+            output_string = Configuration.current()['main']['short_output_string']
+            # print("output_string: {}".format(output_string))
+        else:
+            output_string = \
+                "- Hb {hb}, Plt {platelets}, WBC {wbc}\n" + \
+                "- Na {sodium}, K {potassium}\n" + \
+                "- Ca {calcium}, Mg {magnesium}, Ph {phosphate}\n" + \
+                "- eGFR {egfr}, Cr {creatinine}\n" + \
+                "- ALT {alt}, AST {ast}, GGT {ggt}, ALP {alp}\n" + \
+                "- CRP {crp}\n" + \
+                "- LDH {ldh}"
+        output_string = output_string.format(
+            hb=lab_tests.get('Hb', '-'),
+            platelets=lab_tests.get('Plt', '-'),
+            wbc=lab_tests.get('WBC', '-'),
+            sodium=lab_tests.get('Na', '-'),
+            potassium=lab_tests.get('K', '-'),
+            magnesium=lab_tests.get('Mg', '-'),
+            calcium=lab_tests.get('Ca', '-'),
+            phosphate=lab_tests.get('Ph', '-'),
+            egfr=lab_tests.get('eGFR', '-'),
+            creatinine=lab_tests.get('Cr', '-'),
+            ast=lab_tests.get('AST', '-'),
+            alt=lab_tests.get('ALT', '-'),
+            ggt=lab_tests.get('GGT', '-'),
+            alp=lab_tests.get('ALP', '-'),
+            ldh=lab_tests.get('LD', '-'),
+            crp=lab_tests.get('CRP', '-'),
+            t="\t",
+            tab="\t",
+            n="\n"
+        )
+        return output_string
+
+class LabTestGroup(BaseModel):
+    patient = ForeignKeyField(Patient, backref='lab_test_groups')
+    lab_number = CharField()
+    datetime = CharField()
+
+class LabTest(BaseModel):
+    lab_test_group = ForeignKeyField(LabTestGroup, backref='lab_tests')
+    name = CharField()
+    value = CharField()
+
+class PatientDatabase(QObject):
     log = pyqtSignal(str)
 
     def __init__(self, db_path):
+        super().__init__()
         self.patients = {}
         self.db_path = db_path
+        self.db = SqliteDatabase(db_path)
+        database_proxy.initialize(self.db)
+        self.db.create_tables([Patient, LabTestGroup, LabTest])
         self.db_lock = QMutex()
 
     def save(self):
         self.db_lock.lock()
-        for UR, data in self.patients.items():
-            self.log.emit('{0}'.format(UR))
+        for UR, patient in self.patients.items():
+            self.log.emit('Patient: {0}'.format(UR))
         self.db_lock.unlock()
 
     def add_patient(self, UR, name, DOB):
         self.db_lock.lock()
-        if UR in self.patients.keys():
-            patient = self.patients[UR]
-            self.db_lock.unlock()
-            return patient
-        else:
-            patient = Patient()
-            patient.UR = UR
-            patient.name = name
-            patient.DOB = DOB
-            self.patients[UR] = patient
-            self.db_lock.unlock()
-            return patient
+        patient = None
+        try:
+            patient = Patient.get(Patient.UR == UR)
+            self.log.emit('Patient exist {}'.format(UR))
+        except Patient.DoesNotExist:
+            patient = Patient(UR=UR, name=name, DOB=DOB)
+            self.log.emit('Patient did not exist {}'.format(UR))
+        patient.save()
+        self.patients[UR] = patient
+        self.db_lock.unlock()
+        return patient
 
 class ProcessClipboardImageThread(QThread):
     log = pyqtSignal(str)
@@ -156,9 +215,25 @@ class ProcessClipboardImageThread(QThread):
         self.image_queue = self.app.image_queue
         self.image_queue_lock = self.app.image_queue_lock
         self.patient_db = PatientDatabase(Configuration.current()['main']['database_path'])
+        self.patient_db.log.connect(self.logMessage)
+        self.last_UR = None
+
+    def logMessage(self, message_str):
+        self.log.emit(message_str)
+
+    def pasteLastUR(self):
+        # self.log.emit('Hotkey pressed.')
+        clipboard_data = QApplication.clipboard().text()
+        if clipboard_data is not None and len(clipboard_data) == 6 and clipboard_data.isdigit():
+            self.log.emit('Pasting clipboard data...')
+            keyboard.write(clipboard_data)
+        elif self.last_UR is not None:
+            self.log.emit('Pasting last UR...')
+            keyboard.write(self.last_UR)
 
     def run(self):
         self.log.emit('*** ProcessClipboardImageThread started ***')
+        keyboard.add_hotkey('ctrl+shift+x', self.pasteLastUR)
         config = None
         with open('config.yaml', 'r') as config_file:
             config = yaml.load(config_file)
@@ -176,11 +251,12 @@ class ProcessClipboardImageThread(QThread):
                 self.image_queue_lock.lock()
                 if self.image_queue.empty():
                     self.image_queue_lock.unlock()
-                    time.sleep(10)
+                    time.sleep(0.5)
                 else:
                     current_qimage = self.image_queue.get()
                     self.image_queue_lock.unlock()
 
+            self.log.emit('Converting image format...')
             current_qimage = current_qimage.convertToFormat(QImage.Format_RGB32)
             im_width = current_qimage.width()
             im_height = current_qimage.height()
@@ -193,16 +269,18 @@ class ProcessClipboardImageThread(QThread):
             # Beware garbage collector...
             current_qimage = None
 
-            # print(np.size(im))
-            # print(np.shape(im))
             if im_width >= AUSLAB_MINIMUM_WIDTH and im_width < AUSLAB_MINIMUM_WIDTH + 20:
                 if im_height >= AUSLAB_MINIMUM_HEIGHT and im_height < AUSLAB_MINIMUM_HEIGHT + 50:
 
+                    self.log.emit('Converting to greyscale...')
                     image_grey = cv2.cvtColor(im, cv2.COLOR_RGBA2GRAY)
+                    self.log.emit('Inverting image...')
                     image_inverted = cv2.bitwise_not(image_grey)
+                    self.log.emit('Thresholding image...')
                     _, image_thresh = cv2.threshold(image_inverted, 240, 255, 0)
 
                     # print(cv2.countNonZero(image_thresh))
+                    self.log.emit('Counting black pixels...')
                     black_count = cv2.countNonZero(image_thresh)
                     # print("Black count: {0}".format(black_count))
                     percentage = (black_count / (im_width * im_height)) * 100.0
@@ -222,6 +300,7 @@ class ProcessClipboardImageThread(QThread):
                         lab_number = LAB_NO_REGEX.search(header_lines[0]).group(1)
 
                         self.log.emit('UR: {0}'.format(UR))
+                        self.last_UR = UR
                         self.log.emit('Name: {0}'.format(name))
                         self.log.emit('DOB: {0}'.format(DOB))
                         self.log.emit('Collection time: {0}'.format(collection_time))
@@ -294,13 +373,6 @@ class Assist(QWidget):
         # self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.show()
 
-        # print(self.x())
-        # print(self.y())
-        # print(self.geometry().x())
-        # print(self.geometry().y())
-        # print(self.geometry().width())
-        # print(self.frameGeometry().width())
-
     def handleProcessMessage(self, message_str):
         self.logMessage('Message signal')
         self.trayIcon.showMessage('Assist', message_str, 3000)
@@ -316,6 +388,7 @@ class Assist(QWidget):
         self.image_queue_lock.lock()
         self.image_queue.put(qimage)
         self.image_queue_lock.unlock()
+        self.logMessage('Image waiting in queue...')
 
     def handleCheckBox(self, data):
         # print("Toggling checkbox...")
@@ -360,7 +433,7 @@ def main():
     app = QApplication(sys.argv)
     QApplication.setApplicationName('Assist')
     assist = Assist()
-    keyboard.add_hotkey('ctrl+shift+a', bringFocus, args=(assist,))
+    # keyboard.add_hotkey('ctrl+shift+a', bringFocus, args=(assist,))
     sys.exit(app.exec_())
 
 if __name__ == '__main__':
