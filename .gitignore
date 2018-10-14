@@ -1,4 +1,5 @@
 *.pyc
+patients.sqlite3
 env-main/
 build/
 dist/
