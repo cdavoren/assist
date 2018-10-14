@@ -18,7 +18,7 @@ a = Analysis(['main.py'],
                 (f1_condensed, AUSLAB_DIR), 
                 (f1_normal, AUSLAB_DIR)
                 ],
-             hiddenimports=['yaml', 'keyboard', 'peewee'],
+             hiddenimports=['yaml', 'encodings', 'keyboard', 'peewee'],
              hookspath=[],
              runtime_hooks=[],
              excludes=[],
