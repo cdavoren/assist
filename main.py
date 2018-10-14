@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import sys, os, time, re, datetime, queue, html, sqlite3, configparser
+import sys, os, time, re, datetime, queue, html, sqlite3, configparser, codecs
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -16,6 +16,23 @@ import keyboard
 import yaml
 
 from peewee import *
+
+# START EXCERPT - From https://stackoverflow.com/questions/4020539/process-escape-sequences-in-a-string-in-python
+ESCAPE_SEQUENCE_RE = re.compile(r'''
+    ( \\U........      # 8-digit hex escapes
+    | \\u....          # 4-digit hex escapes
+    | \\x..            # 2-digit hex escapes
+    | \\[0-7]{1,3}     # Octal escapes
+    | \\N\{[^}]+\}     # Unicode characters by name
+    | \\[\\'"abfnrtv]  # Single-character escapes
+    )''', re.UNICODE | re.VERBOSE)
+
+def decode_escapes(s):
+    def decode_match(match):
+        return codecs.decode(match.group(0), 'unicode-escape')
+
+    return ESCAPE_SEQUENCE_RE.sub(decode_match, s)
+# END EXCERPT
 
 AUSLAB_MINIMUM_WIDTH = 1008
 AUSLAB_MINIMUM_HEIGHT = 730
@@ -127,7 +144,7 @@ class Patient(BaseModel):
                 "{potassium}",
                 "{egfr}/{creatinine}",
             ])
-            output_string = Configuration.current()['main']['short_output_string']
+            output_string = decode_escapes(Configuration.current()['main']['short_output_string'])
             # print("output_string: {}".format(output_string))
         else:
             output_string = \
