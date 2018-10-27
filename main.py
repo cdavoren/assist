@@ -39,7 +39,7 @@ AUSLAB_MINIMUM_HEIGHT = 730
 AUSLAB_MINIMUM_BLACK = 80
 
 PATIENT_NAME_REGEX = re.compile(r'Name:\s+(.*)DOB:')
-PATIENT_UR_REGEX = re.compile(r'UR No:\s+[A-Z]{2}(\d{6})')
+PATIENT_UR_REGEX = re.compile(r'UR No:\s+[A-Z]{2,3}(\d{6})')
 PATIENT_DOB_REGEX = re.compile(r'DOB:\s+(\d{2}-\w{3}-\d{2})')
 LAB_NO_REGEX = re.compile(r'Lab No:\s+([0-9\-]+)')
 COLL_REGEX = re.compile(r'Coll:\s+(\d{2}:\d{2}\s+\d{2}-\w{3}-\d{2})')
