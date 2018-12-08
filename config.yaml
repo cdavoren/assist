@@ -1,5 +1,7 @@
+main:
+  database_path: './patients.sqlite3'
+  short_output_string: '{hb}\t{wbc}\t{platelets}\t{sodium}{t}{potassium}\t{egfr}\t{creatinine}\t{crp}'
 auslab:
-  template_file_path: templates.dat
   screenshot_y_border_max: 60
   screenshot_x_border_max: 15
 
@@ -22,6 +24,3 @@ auslab:
 
   central_panel_y_start: 194
   central_panel_y_end: 668
-
-  f1_normal_template_path: auslab/F1_normal.png
-  f1_condensed_template_path: auslab/F1_condensed.png

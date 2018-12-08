@@ -1,5 +1,3 @@
-import cv2
-
 from .auslab import AuslabImage
 from .auslab import AuslabImageLine
 from .auslab import AuslabTemplateRecognizer

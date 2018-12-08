@@ -6,32 +6,6 @@ import cv2
 import pickle
 import PIL
 
-# AUSLAB_SCREENSHOT_Y_BORDER_MAX = 60
-# AUSLAB_SCREENSHOT_X_BORDER_MAX = 15
-
-# AUSLAB_HEADER_X_START = 56
-# AUSLAB_HEADER_Y_START = 74
-
-# AUSLAB_HEADER_X_END = 979
-# AUSLAB_HEADER_Y_END = 156
-
-# AUSLAB_HEADER_CHAR_NUM = 77
-# AUSLAB_HEADER_LINE_NUM = 3
-
-# AUSLAB_LINE_SPACING = 7
-
-# AUSLAB_LINE_HEIGHT = 23
-# AUSLAB_CHAR_WIDTH = 12
-
-# AUSLAB_CONDENSED_LINE_HEIGHT = 23
-# AUSLAB_CONDENSED_CHAR_WIDTH = 8
-
-# AUSLAB_CENTRAL_PANEL_Y_START = 194
-# AUSLAB_CENTRAL_PANEL_Y_END = 668
-
-# AUSLAB_F1_NORMAL = cv2.cvtColor(cv2.imread('auslab/F1_normal.png'), cv2.COLOR_BGR2GRAY)
-# AUSLAB_F1_CONDENSED = cv2.cvtColor(cv2.imread('auslab/F1_condensed.png'), cv2.COLOR_BGR2GRAY)
-
 class AuslabImageLine:
     def __init__(self, source_image, condensed, source_coords, config, char_num=None):
         self.line_image = source_image 
@@ -47,7 +21,6 @@ class AuslabImageLine:
             self.char_num = char_num
     
     def getCharImages(self):
-        # print(self.config)
         result = []
         char_width = self.config['condensed_char_width'] if self.condensed else self.config['char_width']
         for i in range(self.char_num):
@@ -66,8 +39,15 @@ class AuslabImage:
         self.condensed_font = False
         self.config = config
 
-        self.f1_normal_template = cv2.cvtColor(cv2.imread(self.config['f1_normal_template_path']), cv2.COLOR_BGR2GRAY)
-        self.f1_condensed_template = cv2.cvtColor(cv2.imread(self.config['f1_condensed_template_path']), cv2.COLOR_BGR2GRAY)
+        if 'f1_normal_template_path' in self.config:
+            self.f1_normal_template = cv2.cvtColor(cv2.imread(self.config['f1_normal_template_path']), cv2.COLOR_BGR2GRAY)
+        else:
+            self.f1_normal_template = cv2.cvtColor(cv2.imread(os.path.join(os.path.dirname(__file__), 'F1_normal.png')), cv2.COLOR_BGR2GRAY)
+
+        if 'f1_condensed_template_path' in self.config:
+            self.f1_condensed_template = cv2.cvtColor(cv2.imread(self.config['f1_condensed_template_path']), cv2.COLOR_BGR2GRAY)
+        else:
+            self.f1_condensed_template = cv2.cvtColor(cv2.imread(os.path.join(os.path.dirname(__file__), 'F1_condensed.png')), cv2.COLOR_BGR2GRAY)
 
     def loadScreenshot(self, image):
         self.input_image = image        
@@ -86,13 +66,11 @@ class AuslabImage:
         self.loadScreenshot(cv2.imread(image_path))
 
     def getHeaderLines(self):
-        # line_height = AUSLAB_LINE_HEIGHT + AUSLAB_LINE_SPACING
         result = []
         for i in range(self.config['header_line_num']):
             line_y = (self.config['line_height'] + self.config['line_spacing']) * i
             line_coords = [0, self.header_image.shape[1]-1, line_y, line_y+self.config['line_height']-1]
             image_header_line = self.header_image[line_y:line_y+self.config['line_height'],0:self.config['header_char_num']*self.config['char_width']]
-            # print(AUSLAB_HEADER_CHAR_NUM*AUSLAB_CHAR_WIDTH)
             result.append(AuslabImageLine(image_header_line, False, line_coords, self.config, self.config['header_char_num']))
         return result
 
@@ -112,11 +90,7 @@ class AuslabImage:
                 line_x_end -= 16
             line_coords = [line_x_start, line_x_end-1, line_y, line_y+self.config['condensed_line_height']-1]
             image_center_line = self.center_image[line_y:line_y+self.config['condensed_line_height'], line_x_start:line_x_end]
-            # cv2.imwrite('lines/'+filename_base+'.center{0}.cropped.'.format(i+1)+FILENAME_EXTENSION, im_center_line)
             result.append(AuslabImageLine(image_center_line, self._condensed, line_coords, self.config))
-
-            # im_center_line_dotted,spans = add_dots_to_line(im_center_line, condensed)
-            # cv2.imwrite('lines-dotted/'+filename_base+'.center{0}.cropped.'.format(i+1)+FILENAME_EXTENSION, im_center_line_dotted)
 
         return result
 
@@ -126,8 +100,6 @@ class AuslabImage:
         y_min = 0
         x_max = dimensions[1] - 1
         y_max = dimensions[0] - 1
-
-        # print('{0} x {1}'.format(self.config['screenshot_x_border_max'],self.config['screenshot_y_border_max']))
 
         try:
             while self.input_image[self.config['screenshot_y_border_max']][x_min][0] != 0:
@@ -159,7 +131,6 @@ class AuslabImage:
         footer_image_grey = self._image_grey[self.config['central_panel_y_end']+1:]
         normal_match = np.max(cv2.matchTemplate(footer_image_grey, self.f1_normal_template, cv2.TM_CCOEFF))
         condensed_match = np.max(cv2.matchTemplate(footer_image_grey, self.f1_condensed_template, cv2.TM_CCOEFF))
-        # print('{0}: \nNormal: {1}\nCondensed: {2}'.format(filename, numpy.max(result), numpy.max(result2)))
         self._condensed = condensed_match >= normal_match
 
 class AuslabTemplateRecognizer():
@@ -168,17 +139,19 @@ class AuslabTemplateRecognizer():
         self.normal_templates = {}
         self.condensed_templates = {}
         self.config = config
+        template_file = None
         if 'template_file_path' in self.config:
             template_file = open(self.config['template_file_path'], 'rb')
-            [n_t, c_t] = pickle.load(template_file)
-            template_file.close()
-            self.normal_templates = n_t
-            self.condensed_templates = c_t
+        else:
+            template_file = open(os.path.join(os.path.dirname(__file__), 'templates.dat'), 'rb')
+        [n_t, c_t] = pickle.load(template_file)
+        template_file.close()
+        self.normal_templates = n_t
+        self.condensed_templates = c_t
         
 
     def trainFromImage(self, auslab_image, header_truth_lines, center_truth_lines):
         for i, header_image in enumerate(auslab_image.getHeaderLines()):
-            # print('  header-{0}'.format(i+1))
             for j, char_image in enumerate(header_image.getCharImages()):
                 truth_char = header_truth_lines[i][j]
                 if truth_char not in self.normal_templates:
@@ -190,10 +163,8 @@ class AuslabTemplateRecognizer():
                         exists = True
                         break
                 if not exists:
-                    # print('    Learning new {0}'.format(truth_char))
                     self.normal_templates[truth_char].append(char_image)
         for i, center_image in enumerate(auslab_image.getCenterLines()):
-            # print('  center-{0}'.format(i+1))
             for j, char_image in enumerate(center_image.getCharImages()):
                 truth_char = center_truth_lines[i][j]
                 templates = self.condensed_templates if center_image.condensed else self.normal_templates
@@ -206,7 +177,6 @@ class AuslabTemplateRecognizer():
                         exists = True
                         break
                 if not exists:
-                    # print('    Learning new {0} {1}'.format('condensed' if center_image.condensed else 'normal', truth_char))
                     templates[truth_char].append(char_image)
 
     def saveTemplates(self, template_file_path):
@@ -223,8 +193,6 @@ class AuslabTemplateRecognizer():
     def recognizeChar(self, char_image, condensed):
         if np.max(char_image) > 1.0:
             char_image = char_image / 255.0
-        # if np.sum(char_image) == np.size(char_image):
-            # return ' '
         if cv2.countNonZero(char_image) == np.size(char_image):
             return ' '
         templates = self.condensed_templates if condensed else self.normal_templates

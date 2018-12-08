@@ -70,13 +70,12 @@ class Configuration:
     instance = None
 
     def __init__(self, config_filename):
-        self.config = configparser.ConfigParser()
-        self.config.read(config_filename)
+        self.config = yaml.load(config_filename)
 
     @staticmethod
     def current():
         if Configuration.instance is None:
-            Configuration.instance = Configuration('config.ini')
+            Configuration.instance = Configuration(open('config.yaml', 'r'))
         return Configuration.instance.config
 
 class BaseModel(Model):
@@ -251,13 +250,8 @@ class ProcessClipboardImageThread(QThread):
     def run(self):
         self.log.emit('*** ProcessClipboardImageThread started ***')
         keyboard.add_hotkey('ctrl+shift+x', self.pasteLastUR)
-        config = None
-        with open('config.yaml', 'r') as config_file:
-            config = yaml.load(config_file)
 
-        # print(config)
-        auslab_config = config['auslab']
-        # print(auslab_config)
+        auslab_config = Configuration.current()['auslab']
         recognizer = auslab.AuslabTemplateRecognizer(auslab_config)
 
         current_qimage = None
@@ -441,9 +435,6 @@ def bringFocus(assist):
     assist.bringFocus()
 
 def main():
-    # print(sys.path)
-    # ai = auslab.AuslabImage()
-
     config = Configuration.current()
     db_path = config['main']['database_path']
 
