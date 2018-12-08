@@ -6,15 +6,15 @@ block_cipher = None
 AUSLAB_DIR = 'auslab'
 f1_condensed = os.path.join(AUSLAB_DIR, 'F1_condensed.png')
 f1_normal = os.path.join(AUSLAB_DIR, 'F1_normal.png')
+templates = os.path.join(AUSLAB_DIR, 'templates.dat')
 
 a = Analysis(['main.py'],
              pathex=['G:\\workspace\\assist-main'],
              binaries=[],
              datas=[
                 ('main.ico', '.'), 
-                ('config.ini', '.'), 
                 ('config.yaml', '.'), 
-                ('templates.dat', '.'), 
+                (templates, AUSLAB_DIR),
                 (f1_condensed, AUSLAB_DIR), 
                 (f1_normal, AUSLAB_DIR)
                 ],
