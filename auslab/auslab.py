@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import sys, os
+import sys, os, statistics
 import numpy as np
 import cv2
 import pickle
@@ -148,7 +148,16 @@ class AuslabTemplateRecognizer():
         template_file.close()
         self.normal_templates = n_t
         self.condensed_templates = c_t
-        
+
+        # Stats:
+        # print("Number of normal templates: {}".format(len(self.normal_templates)))
+        # print("Number of condensed tempaltes: {}".format(len(self.condensed_templates)))
+        # normal_template_numbers = [len(v) for k, v in self.normal_templates.items()]
+        # condensed_template_numbers = [len(v) for k, v in self.condensed_templates.items()]
+        # print(normal_template_numbers)
+        # print(condensed_template_numbers)
+        # print("Normal template statistics: min: {}    max: {}    median: {}".format(min(normal_template_numbers), max(normal_template_numbers), int(statistics.median(normal_template_numbers))))
+        # print("Condensed template statistics: min: {}    max: {}    median: {}".format(min(condensed_template_numbers), max(condensed_template_numbers), int(statistics.median(condensed_template_numbers))))
 
     def trainFromImage(self, auslab_image, header_truth_lines, center_truth_lines):
         for i, header_image in enumerate(auslab_image.getHeaderLines()):
@@ -184,11 +193,13 @@ class AuslabTemplateRecognizer():
         pickle.dump([self.normal_templates, self.condensed_templates], output_file)
         output_file.close()
 
+
     def recognizeLine(self, auslab_line):
         line_str = ''
         for char_image in auslab_line.getCharImages():
             line_str += self.recognizeChar(char_image, auslab_line.condensed)
         return line_str
+
 
     def recognizeChar(self, char_image, condensed):
         if np.max(char_image) > 1.0:
@@ -207,6 +218,7 @@ class AuslabTemplateRecognizer():
                     min_diff = diff
         return best_letter
 
+
     def dumpTemplates(self, output_dir):
         for i, (letter, templates) in enumerate(self.normal_templates.items()):
             for j, template in enumerate(templates):
@@ -218,6 +230,7 @@ class AuslabTemplateRecognizer():
                 output_filename = 'condensed-{0}-{1}-{2}.png'.format(i,letter,j)
                 x = (template * 255.0).astype(int)
                 cv2.imwrite(os.path.join(output_dir, output_filename), x)
+
 
 def main():
     print('This file should not be run directly.')

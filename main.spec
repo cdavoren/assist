@@ -14,6 +14,7 @@ a = Analysis(['main.py'],
              datas=[
                 ('main.ico', '.'), 
                 ('config.yaml', '.'), 
+                ('templates-retrain.dat', '.'),
                 (templates, AUSLAB_DIR),
                 (f1_condensed, AUSLAB_DIR), 
                 (f1_normal, AUSLAB_DIR)
@@ -35,7 +36,7 @@ exe = EXE(pyz,
           strip=False,
           upx=False,
           icon='main.ico',
-          console=False)
+          console=True)
 coll = COLLECT(exe,
                a.binaries,
                a.zipfiles,

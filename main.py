@@ -290,12 +290,9 @@ class ProcessClipboardImageThread(QThread):
                     self.log.emit('Thresholding image...')
                     _, image_thresh = cv2.threshold(image_inverted, 240, 255, 0)
 
-                    # print(cv2.countNonZero(image_thresh))
                     self.log.emit('Counting black pixels...')
                     black_count = cv2.countNonZero(image_thresh)
-                    # print("Black count: {0}".format(black_count))
                     percentage = (black_count / (im_width * im_height)) * 100.0
-                    # print("Percentage black: {0}".format(percentage))
                     if percentage >= AUSLAB_MINIMUM_BLACK:
                         self.log.emit("AUSLAB image identified.")
 
@@ -309,13 +306,14 @@ class ProcessClipboardImageThread(QThread):
                         DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
                         collection_time = COLL_REGEX.search(header_lines[0]).group(1)
                         lab_number = LAB_NO_REGEX.search(header_lines[0]).group(1)
+                        self.last_UR = UR
 
                         self.log.emit('UR: {0}'.format(UR))
-                        self.last_UR = UR
                         self.log.emit('Name: {0}'.format(name))
                         self.log.emit('DOB: {0}'.format(DOB))
                         self.log.emit('Collection time: {0}'.format(collection_time))
                         self.log.emit('Lab No: {0}'.format(lab_number))
+                        
                         current_patient = self.patient_db.add_patient(UR, name, DOB)
 
                         for line in header_lines:
@@ -350,7 +348,7 @@ class Assist(QWidget):
 
     def initUI(self):
         self.mainIcon = QIcon('main.ico')
-        self.setGeometry(100, 100, 500, 400)
+        self.setGeometry(100, 100, 1000, 400)
         self.setWindowTitle('Assist')
         self.setWindowIcon(self.mainIcon)
         
@@ -362,6 +360,8 @@ class Assist(QWidget):
 
         self.log = QTextEdit()
         self.log.setReadOnly(True)
+        self.log.document().setDefaultStyleSheet('* { font-family: Consolas; } span.logmessage { color: #AA0000; white-space: pre; }')
+        # print(self.log.document().defaultStyleSheet())
 
         self.layout = QVBoxLayout(self)
         self.layout.addWidget(self.longCheckBox)
@@ -411,7 +411,7 @@ class Assist(QWidget):
         self.log_lock.lock()
         dt = datetime.datetime.now()
         datestr = dt.strftime('%d-%m-%Y %H:%M:%S')
-        self.log.insertHtml('<span style="color: #888888">[{0}]</span> {1}<br />'.format(datestr, html.escape(message)))
+        self.log.insertHtml('<span style=""><span style="color: #888888;">[{0}]</span> <span class="logmessage">{1}</span></span><br />'.format(datestr, html.escape(message)))
         self.log_lock.unlock()
 
     def handleClipboardMessage(self, content):

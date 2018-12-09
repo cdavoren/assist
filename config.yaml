@@ -2,6 +2,8 @@ main:
   database_path: './patients.sqlite3'
   short_output_string: '{hb}\t{wbc}\t{platelets}\t{sodium}{t}{potassium}\t{egfr}\t{creatinine}\t{crp}'
 auslab:
+  template_file_path: './templates-retrain.dat'
+
   screenshot_y_border_max: 60
   screenshot_x_border_max: 15
 
