@@ -362,7 +362,7 @@ class Assist(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.mainIcon = QIcon('main.ico')
+        self.mainIcon = QIcon('main-grey.ico')
         self.setGeometry(100, 100, 1000, 400)
         self.setWindowTitle('Assist')
         self.setWindowIcon(self.mainIcon)
@@ -377,7 +377,7 @@ class Assist(QWidget):
 
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.document().setDefaultStyleSheet('* { font-family: Consolas; } span.logmessage { color: #AA0000; white-space: pre; }')
+        self.log.document().setDefaultStyleSheet('* { font-family: Consolas; } span.logmessage { color: #FFFFFF; white-space: pre; }')
         # print(self.log.document().defaultStyleSheet())
 
         self.layout = QVBoxLayout(self)
@@ -461,6 +461,7 @@ def bringFocus(assist):
 
 def main():
     config = Configuration.current()
+    print(config)
     db_path = config['main']['database_path']
 
     app = QApplication(sys.argv)

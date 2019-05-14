@@ -1,6 +1,23 @@
 main:
   database_path: './patients.sqlite3'
-  short_output_string: '{hb}\t{wbc}\t{platelets}\t{sodium}{t}{potassium}\t{egfr}\t{creatinine}\t{crp}'
+  short_output_string: '{hb}\t{wbc}\t{platelets}\t{sodium}\t{potassium}\t{egfr}\t{creatinine}\t{crp}'
+  output_strings:
+    - name: 'short'
+      string: '{hb}\t{wbc}\t{platelets}\t{sodium}\t{potassium}\t{egfr}\t{creatinine}\t{crp}'
+    - name: 'long'
+      string: '- Hb {hb}, Plt {platelets}, WBC {wbc}
+
+      - Na {sodium}, K {potassium}
+
+      - Ca {calcium}, Mg {magnesium}, Ph {phosphate}
+
+      - eGFR {egfr}, Cr {creatinine}
+
+      - ALT {alt}, AST {ast}, GGT {ggt}, ALP {alp}
+
+      - CRP {crp}
+      
+      - LDH {ldh}'
 auslab:
   template_file_path: './templates-retrain.dat'
 
