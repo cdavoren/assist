@@ -2,7 +2,6 @@
 
 block_cipher = None
 
-
 AUSLAB_DIR = 'auslab'
 f1_condensed = os.path.join(AUSLAB_DIR, 'F1_condensed.png')
 f1_normal = os.path.join(AUSLAB_DIR, 'F1_normal.png')
@@ -15,9 +14,11 @@ a = Analysis(['main.py'],
                 ('main.ico', '.'), 
                 ('config.yaml', '.'), 
                 ('templates-retrain.dat', '.'),
+                ('rc-logo.png', '.'),
+                ('./darkstyle/*', 'darkstyle'),
                 (templates, AUSLAB_DIR),
                 (f1_condensed, AUSLAB_DIR), 
-                (f1_normal, AUSLAB_DIR)
+                (f1_normal, AUSLAB_DIR),
                 ],
              hiddenimports=['yaml', 'encodings', 'keyboard', 'peewee'],
              hookspath=[],
@@ -30,13 +31,14 @@ pyz = PYZ(a.pure, a.zipped_data,
              cipher=block_cipher)
 exe = EXE(pyz,
           a.scripts,
+          a.binaries,
           exclude_binaries=True,
-          name='main',
+          name='assist',
           debug=False,
           strip=False,
           upx=False,
           icon='main.ico',
-          console=True)
+          console=False)
 coll = COLLECT(exe,
                a.binaries,
                a.zipfiles,
