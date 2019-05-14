@@ -7,6 +7,9 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt
 
+from darkstyle import DarkStyle
+from logoview import RCLogoView
+
 import auslab
 
 import numpy as np
@@ -222,6 +225,7 @@ class PatientDatabase(QObject):
 class ProcessClipboardImageThread(QThread):
     log = pyqtSignal(str)
     message = pyqtSignal(str)
+    processing = pyqtSignal(str)
     clipboard = pyqtSignal(str)
 
     def __init__(self, app):
@@ -237,6 +241,12 @@ class ProcessClipboardImageThread(QThread):
     def logMessage(self, message_str):
         self.log.emit(message_str)
 
+    def processingStart(self):
+        self.processing.emit('start')
+
+    def processingStop(self):
+        self.processing.emit('stop')
+
     def pasteLastUR(self):
         # self.log.emit('Hotkey pressed.')
         clipboard_data = QApplication.clipboard().text()
@@ -248,6 +258,10 @@ class ProcessClipboardImageThread(QThread):
             keyboard.write(self.last_UR)
 
     def run(self):
+        def not_auslab_image_message():
+            self.message.emit('Not an AUSLAB image')
+            self.log.emit('Not an AUSLAB image.')
+
         self.log.emit('*** ProcessClipboardImageThread started ***')
         keyboard.add_hotkey('ctrl+shift+x', self.pasteLastUR)
 
@@ -280,63 +294,64 @@ class ProcessClipboardImageThread(QThread):
             # Beware garbage collector...
             current_qimage = None
 
-            if im_width >= AUSLAB_MINIMUM_WIDTH and im_width < AUSLAB_MINIMUM_WIDTH + 20:
-                if im_height >= AUSLAB_MINIMUM_HEIGHT and im_height < AUSLAB_MINIMUM_HEIGHT + 50:
+            if im_width >= AUSLAB_MINIMUM_WIDTH and im_width < AUSLAB_MINIMUM_WIDTH + 20 and im_height >= AUSLAB_MINIMUM_HEIGHT and im_height < AUSLAB_MINIMUM_HEIGHT + 50:
+                self.log.emit('Converting to greyscale...')
+                image_grey = cv2.cvtColor(im, cv2.COLOR_RGBA2GRAY)
+                self.log.emit('Inverting image...')
+                image_inverted = cv2.bitwise_not(image_grey)
+                self.log.emit('Thresholding image...')
+                _, image_thresh = cv2.threshold(image_inverted, 240, 255, 0)
 
-                    self.log.emit('Converting to greyscale...')
-                    image_grey = cv2.cvtColor(im, cv2.COLOR_RGBA2GRAY)
-                    self.log.emit('Inverting image...')
-                    image_inverted = cv2.bitwise_not(image_grey)
-                    self.log.emit('Thresholding image...')
-                    _, image_thresh = cv2.threshold(image_inverted, 240, 255, 0)
+                self.log.emit('Counting black pixels...')
+                black_count = cv2.countNonZero(image_thresh)
+                percentage = (black_count / (im_width * im_height)) * 100.0
+                if percentage >= AUSLAB_MINIMUM_BLACK:
+                    self.processingStart()
+                    self.log.emit("AUSLAB image identified.")
 
-                    self.log.emit('Counting black pixels...')
-                    black_count = cv2.countNonZero(image_thresh)
-                    percentage = (black_count / (im_width * im_height)) * 100.0
-                    if percentage >= AUSLAB_MINIMUM_BLACK:
-                        self.log.emit("AUSLAB image identified.")
+                    ai = auslab.AuslabImage(auslab_config)
+                    ai.loadScreenshot(im)
+                    header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
+                    center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
 
-                        ai = auslab.AuslabImage(auslab_config)
-                        ai.loadScreenshot(im)
-                        header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
-                        center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
+                    UR = PATIENT_UR_REGEX.search(header_lines[0]).group(1)
+                    name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
+                    DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
+                    collection_time = COLL_REGEX.search(header_lines[0]).group(1)
+                    lab_number = LAB_NO_REGEX.search(header_lines[0]).group(1)
+                    self.last_UR = UR
 
-                        UR = PATIENT_UR_REGEX.search(header_lines[0]).group(1)
-                        name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
-                        DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
-                        collection_time = COLL_REGEX.search(header_lines[0]).group(1)
-                        lab_number = LAB_NO_REGEX.search(header_lines[0]).group(1)
-                        self.last_UR = UR
+                    self.log.emit('UR: {0}'.format(UR))
+                    self.log.emit('Name: {0}'.format(name))
+                    self.log.emit('DOB: {0}'.format(DOB))
+                    self.log.emit('Collection time: {0}'.format(collection_time))
+                    self.log.emit('Lab No: {0}'.format(lab_number))
+                    
+                    current_patient = self.patient_db.add_patient(UR, name, DOB)
 
-                        self.log.emit('UR: {0}'.format(UR))
-                        self.log.emit('Name: {0}'.format(name))
-                        self.log.emit('DOB: {0}'.format(DOB))
-                        self.log.emit('Collection time: {0}'.format(collection_time))
-                        self.log.emit('Lab No: {0}'.format(lab_number))
-                        
-                        current_patient = self.patient_db.add_patient(UR, name, DOB)
+                    for line in header_lines:
+                        self.log.emit(line)
 
-                        for line in header_lines:
-                            self.log.emit(line)
-
-                        for line in center_lines:
-                            self.log.emit(line)
-                            for tk,tr in TEST_REGEX.items():
-                                try:
-                                    result = tr.search(line)
-                                    if result is None:
-                                        continue
-                                    result = tr.search(line).group(1)
-                                    current_patient.add_test_result(lab_number, collection_time, tk, result)
-                                except IndexError:
-                                    continue
-                        self.log.emit(current_patient.getTabulatedTests(lab_number))
-                        self.log.emit(current_patient.getPasteableTests(lab_number, self.app.useLongForm))
-                        self.clipboard.emit(current_patient.getPasteableTests(lab_number, self.app.useLongForm))
-                        self.message.emit('AUSLAB image processed')
-                        continue
-            self.message.emit('Not an AUSLAB image')
-            self.log.emit('Not an AUSLAB image.')
+                    for line in center_lines:
+                        self.log.emit(line)
+                        for tk,tr in TEST_REGEX.items():
+                            try:
+                                result = tr.search(line)
+                                if result is None:
+                                    continue # to next line
+                                result = tr.search(line).group(1)
+                                current_patient.add_test_result(lab_number, collection_time, tk, result)
+                            except IndexError:
+                                continue # to next line
+                    self.log.emit(current_patient.getTabulatedTests(lab_number))
+                    self.log.emit(current_patient.getPasteableTests(lab_number, self.app.useLongForm))
+                    self.clipboard.emit(current_patient.getPasteableTests(lab_number, self.app.useLongForm))
+                    self.message.emit('AUSLAB image processed')
+                    self.processingStop()
+                else:
+                    not_auslab_image_message()
+            else:
+                not_auslab_image_message()
 
 class Assist(QWidget):
     logsig = pyqtSignal(str)
@@ -356,6 +371,8 @@ class Assist(QWidget):
         self.longCheckBox.setCheckState(False)
         self.longCheckBox.toggled.connect(self.handleCheckBox)
 
+        self.processingLogo = RCLogoView()
+
         self.log_lock = QMutex()
 
         self.log = QTextEdit()
@@ -365,6 +382,7 @@ class Assist(QWidget):
 
         self.layout = QVBoxLayout(self)
         self.layout.addWidget(self.longCheckBox)
+        self.layout.addWidget(self.processingLogo)
         self.layout.addWidget(self.log)
 
         self.trayIcon = QSystemTrayIcon(self)
@@ -379,10 +397,17 @@ class Assist(QWidget):
         self.image_processing_thread.message.connect(self.handleProcessMessage)
         self.image_processing_thread.log.connect(self.handleClipboardLog)
         self.image_processing_thread.clipboard.connect(self.handleClipboardMessage)
+        self.image_processing_thread.processing.connect(self.handleProcessingMessage)
         self.image_processing_thread.start()
 
         # self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.show()
+
+    def handleProcessingMessage(self, message_str):
+        if message_str == 'start':
+            self.processingLogo.animationStart()
+        elif message_str == 'stop':
+            self.processingLogo.animationStop()
 
     def handleProcessMessage(self, message_str):
         self.logMessage('Message signal')
@@ -439,7 +464,8 @@ def main():
     db_path = config['main']['database_path']
 
     app = QApplication(sys.argv)
-    QApplication.setApplicationName('Assist')
+    app.setApplicationName('Assist')
+    app.setStyle(DarkStyle())
     assist = Assist()
     # keyboard.add_hotkey('ctrl+shift+a', bringFocus, args=(assist,))
     sys.exit(app.exec_())
