@@ -125,8 +125,8 @@ class Patient(BaseModel):
                 output_string_columns += '-'
         return '\t'.join(output_string_columns)
 
-    def getPasteableTests(self, lab_number, useLongForm):
-        lab_tes_group = None
+    def getPasteableTests(self, lab_number, format_string):
+        lab_test_group = None
         try:
             lab_test_group = self.lab_test_groups.select().where(LabTestGroup.lab_number == lab_number).get()
         except LabTestGroup.DoesNotExist:
@@ -137,6 +137,7 @@ class Patient(BaseModel):
         for lab_test in lab_test_group.lab_tests:
             lab_tests[lab_test.name] = lab_test.value
 
+        """
         output_string = ''
         if not useLongForm:
             output_string = '\t'.join([
@@ -157,7 +158,8 @@ class Patient(BaseModel):
                 "- ALT {alt}, AST {ast}, GGT {ggt}, ALP {alp}\n" + \
                 "- CRP {crp}\n" + \
                 "- LDH {ldh}"
-        output_string = output_string.format(
+        """
+        output_string = decode_escapes(format_string).format(
             hb=lab_tests.get('Hb', '-'),
             platelets=lab_tests.get('Plt', '-'),
             wbc=lab_tests.get('WBC', '-'),
@@ -228,15 +230,16 @@ class ProcessClipboardImageThread(QThread):
     processing = pyqtSignal(str)
     clipboard = pyqtSignal(str)
 
-    def __init__(self, app):
+    def __init__(self, assist_widget, config):
         super().__init__()
         self.enabled = True
-        self.app = app
-        self.image_queue = self.app.image_queue
-        self.image_queue_lock = self.app.image_queue_lock
+        self.assist_widget = assist_widget
+        self.image_queue = self.assist_widget.image_queue
+        self.image_queue_lock = self.assist_widget.image_queue_lock
         self.patient_db = PatientDatabase(Configuration.current()['main']['database_path'])
         self.patient_db.log.connect(self.logMessage)
         self.last_UR = None
+        self.config = config
 
     def logMessage(self, message_str):
         self.log.emit(message_str)
@@ -248,7 +251,6 @@ class ProcessClipboardImageThread(QThread):
         self.processing.emit('stop')
 
     def pasteLastUR(self):
-        # self.log.emit('Hotkey pressed.')
         clipboard_data = QApplication.clipboard().text()
         if clipboard_data is not None and len(clipboard_data) == 6 and clipboard_data.isdigit():
             self.log.emit('Pasting clipboard data...')
@@ -271,7 +273,6 @@ class ProcessClipboardImageThread(QThread):
         current_qimage = None
 
         while self.enabled:
-
             while current_qimage is None:
                 self.image_queue_lock.lock()
                 if self.image_queue.empty():
@@ -343,9 +344,10 @@ class ProcessClipboardImageThread(QThread):
                                 current_patient.add_test_result(lab_number, collection_time, tk, result)
                             except IndexError:
                                 continue # to next line
-                    self.log.emit(current_patient.getTabulatedTests(lab_number))
-                    self.log.emit(current_patient.getPasteableTests(lab_number, self.app.useLongForm))
-                    self.clipboard.emit(current_patient.getPasteableTests(lab_number, self.app.useLongForm))
+                    # self.log.emit(current_patient.getTabulatedTests(lab_number))
+                    clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString())
+                    self.log.emit(clipboard_data)
+                    self.clipboard.emit(clipboard_data)
                     self.message.emit('AUSLAB image processed')
                     self.processingStop()
                 else:
@@ -356,33 +358,45 @@ class ProcessClipboardImageThread(QThread):
 class Assist(QWidget):
     logsig = pyqtSignal(str)
 
-    def __init__(self):
+    def __init__(self, config):
         super().__init__()
         self.useLongForm = False
+        self.config = config
         self.initUI()
 
     def initUI(self):
         self.mainIcon = QIcon('main-grey.ico')
-        self.setGeometry(100, 100, 1000, 400)
+        self.setGeometry(100, 100, 1000, 500)
         self.setWindowTitle('Assist')
         self.setWindowIcon(self.mainIcon)
-        
+
+        self.processingLogo = RCLogoView()
+
         self.longCheckBox = QCheckBox("&Long form")
         self.longCheckBox.setCheckState(False)
         self.longCheckBox.toggled.connect(self.handleCheckBox)
 
-        self.processingLogo = RCLogoView()
+        self.formatComboBox = QComboBox()
+        self.formatComboBox.addItems([x['name'] for x in self.config['main']['output_strings']])
+        self.formatComboBox.currentIndexChanged.connect(self.handleOutputStringChanged)
+        # self.formatComboBox.setStyleSheet('QComboBox { color: red; }')
 
+        self.formatText = QTextEdit()
+        self.formatText.setReadOnly(True)
+        self.formatText.document().setDefaultStyleSheet('span.sv { color: #CC44FF; }')
+
+        self.handleOutputStringChanged()
+        
         self.log_lock = QMutex()
-
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.document().setDefaultStyleSheet('* { font-family: Consolas; } span.logmessage { color: #FFFFFF; white-space: pre; }')
-        # print(self.log.document().defaultStyleSheet())
 
         self.layout = QVBoxLayout(self)
-        self.layout.addWidget(self.longCheckBox)
         self.layout.addWidget(self.processingLogo)
+        # self.layout.addWidget(self.longCheckBox)
+        self.layout.addWidget(self.formatComboBox)
+        self.layout.addWidget(self.formatText)
         self.layout.addWidget(self.log)
 
         self.trayIcon = QSystemTrayIcon(self)
@@ -393,27 +407,48 @@ class Assist(QWidget):
 
         self.image_queue = queue.Queue()
         self.image_queue_lock = QMutex()
-        self.image_processing_thread = ProcessClipboardImageThread(self)
-        self.image_processing_thread.message.connect(self.handleProcessMessage)
-        self.image_processing_thread.log.connect(self.handleClipboardLog)
+
+        self.image_processing_thread = ProcessClipboardImageThread(self, self.config)
+        self.image_processing_thread.message.connect(self.handleProcessThreadMessage)
+        self.image_processing_thread.log.connect(self.handleLogMessage)
         self.image_processing_thread.clipboard.connect(self.handleClipboardMessage)
-        self.image_processing_thread.processing.connect(self.handleProcessingMessage)
+        self.image_processing_thread.processing.connect(self.handleProcessingStateChange)
         self.image_processing_thread.start()
 
-        # self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.show()
 
-    def handleProcessingMessage(self, message_str):
+    def getCurrentOutputString(self):
+        output_string = [x["string"] for x in self.config["main"]["output_strings"] if x["name"] == self.formatComboBox.currentText()]
+        if len(output_string) > 0:
+            output_string = output_string[0]
+            return output_string
+        else:
+            return None
+
+    def handleOutputStringChanged(self):
+        def highlightOutputString(output_string):
+            return re.sub(r'\{(.*?)\}', r'<span class="sv">{\1}</span>', output_string)
+
+        output_string = self.getCurrentOutputString()
+        if output_string is None:
+            output_string = ''
+        output_string = output_string.replace('\\n', '\n')
+        output_string = output_string.replace('\n', '<br />')
+        output_html = highlightOutputString(output_string)
+        # print(output_html)
+        self.formatText.setHtml(output_html)
+
+    def handleProcessingStateChange(self, message_str):
         if message_str == 'start':
             self.processingLogo.animationStart()
         elif message_str == 'stop':
             self.processingLogo.animationStop()
 
-    def handleProcessMessage(self, message_str):
+    def handleProcessThreadMessage(self, message_str):
         self.logMessage('Message signal')
         self.trayIcon.showMessage('Assist', message_str, 3000)
 
-    def handleClipboardLog(self, message):
+    def handleLogMessage(self, message):
         self.logMessage(message)
 
     def handleClipboardChanged(self):
@@ -461,13 +496,13 @@ def bringFocus(assist):
 
 def main():
     config = Configuration.current()
-    print(config)
+    # print(config)
     db_path = config['main']['database_path']
 
     app = QApplication(sys.argv)
     app.setApplicationName('Assist')
     app.setStyle(DarkStyle())
-    assist = Assist()
+    assist = Assist(config)
     # keyboard.add_hotkey('ctrl+shift+a', bringFocus, args=(assist,))
     sys.exit(app.exec_())
 

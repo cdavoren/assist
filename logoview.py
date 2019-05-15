@@ -14,21 +14,26 @@ class RCLogoView(QtWidgets.QGraphicsView):
 
         self.imageWidth = 100
 
-        self.margin = 10
+        self.margin = 30
 
-        self.actualWidth = (math.atan( (self.imageWidth / 2) / (self.imageWidth / math.sqrt(3)) ) * 2) + self.margin
+        greaterCentroidRadius = self.imageWidth / math.sqrt(3)
+
+        self.actualWidth = round(greaterCentroidRadius * 2) + self.margin
 
         self.scene = QtWidgets.QGraphicsScene(self)
         self.item = QtWidgets.QGraphicsPixmapItem(self.pixmap)
-        # self.item.setPos(actualWidth / 2, actualWidth / 2)
         self.scene.addItem(self.item)
         self.setScene(self.scene)
 
         self.setMinimumSize(self.actualWidth, self.actualWidth)
 
+        self.setMaximumHeight(self.actualWidth)
+
         self.animation = QtCore.QVariantAnimation(self, startValue=0.0, endValue=360.0, duration=1250, valueChanged=self.on_valueChanged)
 
         self.animation.setLoopCount(-1)
+
+        self.setStyleSheet('background-color: transparent; border-style: none;')
 
     def resetRotation(self):
         self.item.setRotation(0)
