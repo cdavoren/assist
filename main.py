@@ -58,12 +58,19 @@ TEST_REGEX = {
     'Ca' : re.compile(r'Corr Ca\s+([0-9\.]+)\s+'),
     'Ph' : re.compile(r'Phosphate\s+([0-9\.]+)\s+'),
     'eGFR' : re.compile(r'eGFR\s+(\<?\>?\s*\d+)\s+'),
-    'CRP' : re.compile(r'CRP\s+(\d+)'),
+    'CRP' : re.compile(r'CRP\s+(\<?[0-9\.]+)'),
     'AST' : re.compile(r'AST\s+(\d+)'),
     'ALT' : re.compile(r'ALT\s+(\d+)'),
     'GGT' : re.compile(r'Gamma GT\s+(\d+)'),
     'ALP' : re.compile(r'ALP\s+(\d+)'),
     'LD' : re.compile(r'LD\s+(\d+)'),
+    'INR' : re.compile(r'INR\s+([0-9\.]+)'),
+    'ESR' : re.compile(r'ESR\s+(\d+)'),
+    'Neut' : re.compile(r'Neut.*?:\s+([0-9\.]+)'),
+    'Lymph' : re.compile(r'Lymph.*?:\s+([0-9\.]+)'),
+    'Mono' : re.compile(r'Mono.*?:\s+([0-9\.]+)'),
+    'Eosin' : re.compile(r'Eosin.*?:\s+([0-9\.]+)'),
+    'Baso' : re.compile(r'Baso.*?:\s+([0-9\.]+)'),
 }
 
 database_proxy = Proxy()
@@ -91,7 +98,9 @@ class Patient(BaseModel):
     DOB = CharField()
 
     def add_test_result(self, lab_number, test_datetime, test_name, result):
+        # And overwrite
         lab_test_group = None
+
         try:
             lab_test_group = self.lab_test_groups.select().where(LabTestGroup.lab_number == lab_number).get()
         except LabTestGroup.DoesNotExist:
@@ -100,30 +109,13 @@ class Patient(BaseModel):
 
         try:
             lab_test = lab_test_group.lab_tests.select().where(LabTest.name == test_name).get()
+            lab_test.value = result
+            lab_test.save()
             return
         except LabTest.DoesNotExist:
             lab_test = LabTest(lab_test_group=lab_test_group, name=test_name, value=result)
             lab_test.save()
 
-    def getTabulatedTests(self, lab_number):
-        lab_test_group = None
-        try:
-            lab_test_group = self.lab_test_groups.select().where(LabTestGroup.lab_number == lab_number).get()
-        except LabTestGroup.DoesNotExist:
-            return ''
-
-        lab_test_results = {}
-        for lab_test in lab_test_group.lab_tests.select():
-            lab_test_results[lab_test.name] = lab_test.value
-
-        output_string_columns = [lab_test_group.datetime]
-        test_order = ['Hb', 'Plt', 'WBC', 'Na', 'K', 'eGFR', 'Cr', 'Mg', 'Ca', 'Ph']
-        for test_name in test_order:
-            if test_name in lab_test_results.keys():
-                output_string_columns.append(lab_test_results[test_name])
-            else:
-                output_string_columns += '-'
-        return '\t'.join(output_string_columns)
 
     def getPasteableTests(self, lab_number, format_string):
         lab_test_group = None
@@ -137,28 +129,6 @@ class Patient(BaseModel):
         for lab_test in lab_test_group.lab_tests:
             lab_tests[lab_test.name] = lab_test.value
 
-        """
-        output_string = ''
-        if not useLongForm:
-            output_string = '\t'.join([
-                "{hb}/{platelets}",
-                "{wbc}",
-                "{sodium}",
-                "{potassium}",
-                "{egfr}/{creatinine}",
-            ])
-            output_string = decode_escapes(Configuration.current()['main']['short_output_string'])
-            # print("output_string: {}".format(output_string))
-        else:
-            output_string = \
-                "- Hb {hb}, Plt {platelets}, WBC {wbc}\n" + \
-                "- Na {sodium}, K {potassium}\n" + \
-                "- Ca {calcium}, Mg {magnesium}, Ph {phosphate}\n" + \
-                "- eGFR {egfr}, Cr {creatinine}\n" + \
-                "- ALT {alt}, AST {ast}, GGT {ggt}, ALP {alp}\n" + \
-                "- CRP {crp}\n" + \
-                "- LDH {ldh}"
-        """
         output_string = decode_escapes(format_string).format(
             hb=lab_tests.get('Hb', '-'),
             platelets=lab_tests.get('Plt', '-'),
@@ -176,6 +146,13 @@ class Patient(BaseModel):
             alp=lab_tests.get('ALP', '-'),
             ldh=lab_tests.get('LD', '-'),
             crp=lab_tests.get('CRP', '-'),
+            esr=lab_tests.get('ESR', '-'),
+            inr=lab_tests.get('INR', '-'),
+            neut=lab_tests.get('Neut', '-'),
+            lymph=lab_tests.get('Lymph', '-'),
+            mono=lab_tests.get('Mono', '-'),
+            eosin=lab_tests.get('Eosin', '-'),
+            baso=lab_tests.get('Baso', '-'),
             t="\t",
             tab="\t",
             n="\n"
@@ -340,11 +317,10 @@ class ProcessClipboardImageThread(QThread):
                                 result = tr.search(line)
                                 if result is None:
                                     continue # to next line
-                                result = tr.search(line).group(1)
-                                current_patient.add_test_result(lab_number, collection_time, tk, result)
+                                result_match = result.group(1)
+                                current_patient.add_test_result(lab_number, collection_time, tk, result_match)
                             except IndexError:
                                 continue # to next line
-                    # self.log.emit(current_patient.getTabulatedTests(lab_number))
                     clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString())
                     self.log.emit(clipboard_data)
                     self.clipboard.emit(clipboard_data)
@@ -472,6 +448,7 @@ class Assist(QWidget):
         dt = datetime.datetime.now()
         datestr = dt.strftime('%d-%m-%Y %H:%M:%S')
         self.log.insertHtml('<span style=""><span style="color: #888888;">[{0}]</span> <span class="logmessage">{1}</span></span><br />'.format(datestr, html.escape(message)))
+        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
         self.log_lock.unlock()
 
     def handleClipboardMessage(self, content):

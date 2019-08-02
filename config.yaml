@@ -18,6 +18,24 @@ main:
       - CRP {crp}
       
       - LDH {ldh}'
+    - name: 'extra long'
+      string: '- Hb {hb}, Plt {platelets}, WBC {wbc}
+
+      - Neuts {neut}, Lymphs {lymph}, Monos {mono}, Eosins {eosin}, Basos {baso}
+
+      - CRP {crp}, ESR {esr}
+      
+      - eGFR {egfr}, Cr {creatinine}
+
+      - ALT {alt}, AST {ast}, GGT {ggt}, ALP {alp}
+
+      - Na {sodium}, K {potassium}
+
+      - Ca {calcium}, Mg {magnesium}, Ph {phosphate}
+
+      - LDH {ldh}
+
+      - INR {inr}'
 auslab:
   template_file_path: './templates-retrain.dat'
 
