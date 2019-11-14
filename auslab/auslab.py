@@ -29,6 +29,27 @@ class AuslabImageLine:
         return result
 
 class AuslabImage:
+    # This class is designed to handle two sizes - normal and 125% scaled (latter found commonly on laptops in the hospital)
+    AUSLAB_SIZE_NORMAL = 0
+    AUSLAB_SIZE_LARGE = 1
+
+    # Minimum percentage of black pixels to be considered a potential AUSLAB image
+    AUSLAB_MINIMUM_BLACK = 75
+
+    # Size expectations (normal)
+    AUSLAB_MINIMUM_WIDTH = 1008
+    AUSLAB_MINIMUM_HEIGHT = 730
+
+    # Size expectations (large 125%)
+    AUSLAB_MINIMUM_WIDTH_LARGE = 1258
+    AUSLAB_MINIMUM_HEIGHT_LARGE = 940
+
+    # Callback types
+    CB_HEADER_LINE = 0
+    CB_CENTER_LINE = 1
+    CB_HEADER_LINES_COMPLETE = 2
+    CB_CENTER_LINES_COMPLETE = 3
+
     def __init__(self, config):
         self.current_image = None
         self.input_image = None
@@ -38,6 +59,56 @@ class AuslabImage:
         self.footer_image = None
         self.condensed_font = False
         self.config = config
+        self.image_path = None
+
+        self.header_line_images = []
+        self.center_line_images = []
+
+        self.valid = False
+        self.size = None
+
+        self._callbacks = {
+            self.CB_HEADER_LINE : [],
+            self.CB_CENTER_LINE : [],
+            self.CB_HEADER_LINES_COMPLETE : [],
+            self.CB_CENTER_LINES_COMPLETE : [],
+        }
+
+    def addCallback(self, cb, cb_type):
+        self._callbacks[cb_type].append(cb)
+
+    def _invokeCallbacks(self, cb_type, data):
+        for cb in self._callbacks[cb_type]:
+            cb(self, data)
+
+    def loadScreenshot(self, image):
+        if not isinstance(image, np.ndarray):
+            # Assume it's a Qt QImage
+            # TODO: Remove conversions using Qt here - find equivalent functionality on numpy array directly
+            im_width = image.width()
+            im_height = image.height()
+            ptr = image.bits()
+            ptr.setsize(image.byteCount())
+        
+            self.input_image = np.array(ptr).reshape(im_height, im_width, 4)
+        else:
+            self.input_image = image
+        
+        self.valid, self.size = self._detectValid(self.input_image)
+
+        if not self.valid:
+            return
+
+        # Select sub-configuration based on size
+        # Sometimes configuration is already known and passed
+        if self.size is not None and 'normal' in self.config:
+            if self.size == self.AUSLAB_SIZE_NORMAL:
+                self.config = self.config['normal']
+            elif self.size == self.AUSLAB_SIZE_LARGE:
+                self.config = self.config['large']
+            else:
+                print('[Critical Error] Image marked as valid but has no size.  Unable to choose configuration')
+                sys.exit(1)
 
         if 'f1_normal_template_path' in self.config:
             self.f1_normal_template = cv2.cvtColor(cv2.imread(self.config['f1_normal_template_path']), cv2.COLOR_BGR2GRAY)
@@ -49,8 +120,6 @@ class AuslabImage:
         else:
             self.f1_condensed_template = cv2.cvtColor(cv2.imread(os.path.join(os.path.dirname(__file__), 'F1_condensed.png')), cv2.COLOR_BGR2GRAY)
 
-    def loadScreenshot(self, image):
-        self.input_image = image        
         self._removeScreenshotBorder()
         self._removeColors()
         self._segmentImage()
@@ -63,61 +132,140 @@ class AuslabImage:
         self.loadScreenshot(open_cv_image)
 
     def loadScreenshotFromPath(self, image_path):
+        # print("Loading screenshot from path: {}".format(image_path))
+        self.image_path = image_path
         self.loadScreenshot(cv2.imread(image_path))
 
     def getHeaderLines(self):
-        result = []
+        self.header_line_images = []
         for i in range(self.config['header_line_num']):
-            line_y = (self.config['line_height'] + self.config['line_spacing']) * i
-            line_coords = [0, self.header_image.shape[1]-1, line_y, line_y+self.config['line_height']-1]
-            image_header_line = self.header_image[line_y:line_y+self.config['line_height'],0:self.config['header_char_num']*self.config['char_width']]
-            result.append(AuslabImageLine(image_header_line, False, line_coords, self.config, self.config['header_char_num']))
-        return result
+            line_y = int(self.config['line_height'] + self.config['line_spacing']) * i
+            line_coords = [0, self.header_image.shape[1]-1, line_y, line_y+int(self.config['line_height'])-1]
+            image_header_line = self.header_image[line_y:line_y+int(self.config['line_height']),0:self.config['header_char_num']*self.config['char_width']]
+            self.header_line_images.append(AuslabImageLine(image_header_line, False, line_coords, self.config, self.config['header_char_num']))
+            self._invokeCallbacks(self.CB_HEADER_LINE, self.header_line_images[-1])
+        self._invokeCallbacks(self.CB_HEADER_LINES_COMPLETE, self.header_line_images)
+        return self.header_line_images
 
     def getCenterLines(self):
-        result = []
+        self.center_line_images = []
+        # Remember that for large (scaled) images line heights and spacing may be FLOATING POINT NUMBERS
         visual_line_height = self.config['line_height'] + self.config['line_spacing']
         center_panel_height = self.center_image.shape[0]
-        num_center_lines = (center_panel_height + 1) // (self.config['line_height'] + self.config['line_spacing'])
+        num_center_lines = int((center_panel_height + 1) // (self.config['line_height'] + self.config['line_spacing']))
         if center_panel_height % visual_line_height >= self.config['line_height']:
             num_center_lines += 1
         for i in range(num_center_lines):
-            line_y = visual_line_height * i
+            line_y = round(visual_line_height * i)
             line_x_start = 0
             line_x_end = self.center_image.shape[1]
-            if not self._condensed:
+            if (not self._condensed) and self.config['name'] == 'normal':
                 line_x_start = 32
                 line_x_end -= 16
+            elif (not self._condensed) and self.config['name'] == 'large':
+                line_x_start = 40
+                line_x_end -= 20
             line_coords = [line_x_start, line_x_end-1, line_y, line_y+self.config['condensed_line_height']-1]
             image_center_line = self.center_image[line_y:line_y+self.config['condensed_line_height'], line_x_start:line_x_end]
-            result.append(AuslabImageLine(image_center_line, self._condensed, line_coords, self.config))
+            self.center_line_images.append(AuslabImageLine(image_center_line, self._condensed, line_coords, self.config))
+            self._invokeCallbacks(self.CB_CENTER_LINE, self.center_line_images[-1])
+        """
+        for v in result[-1]:
+            print(v)
+        """
+        # print(result[-1].getCharImages()[0])
 
-        return result
+        # print(result[0].getCharImages()[0:10])
+        # sys.exit(1)
+        self._invokeCallbacks(self.CB_CENTER_LINES_COMPLETE, self.center_line_images)
+        return self.center_line_images
+
+    def _detectValid(self, image):
+        im_width = image.shape[1]
+        im_height = image.shape[0]
+
+        print("{} {}".format(im_width, im_height))
+
+        if im_width >= self.AUSLAB_MINIMUM_WIDTH_LARGE and im_width < self.AUSLAB_MINIMUM_WIDTH_LARGE + 20 and im_height >= self.AUSLAB_MINIMUM_HEIGHT_LARGE and im_height < self.AUSLAB_MINIMUM_HEIGHT_LARGE + 20:
+            print('Image is likely large...')
+            if self._countBlackPercentage(image) < self.AUSLAB_MINIMUM_BLACK:
+                return (False, None)
+            return (True, self.AUSLAB_SIZE_LARGE)
+
+        elif im_width >= self.AUSLAB_MINIMUM_WIDTH and im_width < self.AUSLAB_MINIMUM_WIDTH + 20 and im_height >= self.AUSLAB_MINIMUM_HEIGHT and im_height < self.AUSLAB_MINIMUM_HEIGHT + 50:
+            # Test for valid NORMAL image
+            print("Image is likely normal...")
+            if self._countBlackPercentage(image) < self.AUSLAB_MINIMUM_BLACK:
+                # print('Image does not contain enough black to be an AUSLAB image!')
+                return (False, None)
+            return (True, self.AUSLAB_SIZE_NORMAL)
+
+        # print('Image does not meet size criteria')
+        return (False, None)
+
+    def _countBlackPercentage(self, image):
+        # TODO: Ditch OpenCV code - can all be done in numpy
+        im_width = image.shape[1]
+        im_height = image.shape[0]
+
+        image_grey = cv2.cvtColor(image, cv2.COLOR_RGBA2GRAY)
+        image_inverted = cv2.bitwise_not(image_grey)
+        _, image_thresh = cv2.threshold(image_inverted, 240, 255, 0)
+        black_count = cv2.countNonZero(image_thresh)
+        percentage = (black_count / (im_width * im_height)) * 100.0
+        print('Black percentage: {}'.format(percentage))
+        return percentage
 
     def _removeScreenshotBorder(self):
+        # print('Removing border...')
         dimensions = self.input_image.shape
         x_min = 0
         y_min = 0
         x_max = dimensions[1] - 1
         y_max = dimensions[0] - 1
 
+        """
+        screenshot_y_border_max = self.config['screenshot_y_border_max']
+        print(screenshot_y_border_max)
+        print(self.config['screenshot_x_border_max'])
+        """
+
+        error_margin = self.config['border_error_margin']
+
         try:
-            while self.input_image[self.config['screenshot_y_border_max']][x_min][0] != 0:
+            while self.input_image[self.config['screenshot_y_border_max']][x_min][0] > error_margin:
                 x_min += 1
-            while self.input_image[self.config['screenshot_y_border_max']][x_max][0] != 0:
+            while self.input_image[self.config['screenshot_y_border_max']][x_max][0] > error_margin:
                 x_max -= 1
-            while self.input_image[y_min][self.config['screenshot_x_border_max']][0] != 0:
+            while self.input_image[y_min][self.config['screenshot_x_border_max']][0] > error_margin:
+                # print('Coords: [{}, {}]: {}'.format(y_min, screenshot_y_border_max, self.input_image[screenshot_y_border_max, x_min][0]))
                 y_min += 1
-            while self.input_image[y_max][self.config['screenshot_x_border_max']][0] != 0:
+            while self.input_image[y_max][self.config['screenshot_x_border_max']][0] > error_margin:
                 y_max -= 1
         except IndexError:
             print('{0} - {1} - {2} - {3}'.format(x_min, x_max, y_min, y_max))
             raise
         
+        print('Screenshot borders: {0} - {1} - {2} - {3}'.format(x_min, x_max, y_min, y_max))
         self.current_image = self.input_image[y_min:y_max+1,x_min:x_max+1]
+        # sys.exit(1)
+
+    def _log(self, log_string):
+        if self.config['debug'] == True:
+            print(log_string)
+
+    def _getOutputDirectory(self):
+        output_dir = os.path.join(os.path.dirname(__file__), 'interim', self.config['name'])
+        return output_dir
 
     def _removeColors(self):
         self._image_grey = cv2.cvtColor(self.current_image, cv2.COLOR_BGR2GRAY)
+        """
+        self._log('   Writing greyscale image to disk...')
+        image_name = os.path.basename(os.path.splitext(self.image_path)[0])
+        image_path = os.path.join(self._getOutputDirectory(), image_name + '-greyscale.png')
+        cv2.imwrite(image_path, self._image_grey)
+        """
         image_inverted = cv2.bitwise_not(self._image_grey)
         _, image_thresh = cv2.threshold(image_inverted, 240, 255, 0)
         self.current_image = image_thresh
@@ -126,6 +274,16 @@ class AuslabImage:
         self.header_image = self.current_image[self.config['header_y_start']:self.config['header_y_end']+1,self.config['header_x_start']:self.config['header_x_end']+1]
         self.center_image = self.current_image[self.config['central_panel_y_start']:self.config['central_panel_y_end']]
         self.footer_image = self.current_image[self.config['central_panel_y_end']+1:]
+
+        """
+        image_name = os.path.basename(os.path.splitext(self.image_path)[0])
+        new_path = os.path.join(self._getOutputDirectory(), image_name + '-{}') + '.png'
+        self._log('   Segmented - outputing interim data to {}'.format(new_path))
+
+        cv2.imwrite(new_path.format('header'), self.header_image)
+        cv2.imwrite(new_path.format('center'), self.center_image)
+        cv2.imwrite(new_path.format('footer'), self.footer_image)
+        """
 
     def _detectCondensed(self):
         footer_image_grey = self._image_grey[self.config['central_panel_y_end']+1:]
@@ -141,25 +299,54 @@ class AuslabTemplateRecognizer():
         self.config = config
         template_file = None
         if 'template_file_path' in self.config:
+            print('AuslabTemplateRecognizer loading specified template file: {}'.format(self.config['template_file_path']))
             template_file = open(self.config['template_file_path'], 'rb')
+            [n_t, c_t] = pickle.load(template_file)
+            self.normal_templates = n_t
+            self.condensed_templates = c_t
+            template_file.close()
+            """
+            else:
+                print('AuslabTemplateRecognizer loading pre-packaged template file...')
+                template_file = open(os.path.join(os.path.dirname(__file__), 'templates.dat'), 'rb')
+            """
         else:
-            template_file = open(os.path.join(os.path.dirname(__file__), 'templates.dat'), 'rb')
-        [n_t, c_t] = pickle.load(template_file)
-        template_file.close()
-        self.normal_templates = n_t
-        self.condensed_templates = c_t
+            self.clearTemplates()
 
         # Stats:
-        # print("Number of normal templates: {}".format(len(self.normal_templates)))
-        # print("Number of condensed tempaltes: {}".format(len(self.condensed_templates)))
-        # normal_template_numbers = [len(v) for k, v in self.normal_templates.items()]
-        # condensed_template_numbers = [len(v) for k, v in self.condensed_templates.items()]
-        # print(normal_template_numbers)
-        # print(condensed_template_numbers)
-        # print("Normal template statistics: min: {}    max: {}    median: {}".format(min(normal_template_numbers), max(normal_template_numbers), int(statistics.median(normal_template_numbers))))
-        # print("Condensed template statistics: min: {}    max: {}    median: {}".format(min(condensed_template_numbers), max(condensed_template_numbers), int(statistics.median(condensed_template_numbers))))
+        print("Number of normal templates: {}".format(len(self.normal_templates)))
+        print("Number of condensed templates: {}".format(len(self.condensed_templates)))
+        if len(self.normal_templates) > 0:
+            normal_template_numbers = [len(v) for k, v in self.normal_templates.items()]
+            condensed_template_numbers = [len(v) for k, v in self.condensed_templates.items()]
+            # print(normal_template_numbers)
+            # print(condensed_template_numbers)
+            """
+            for k, v in self.normal_templates.items():
+                if len(v) > 10:
+                    print(k)
+                    print('   {}'.format(len(v)))
+                for t in v:
+                    print('   {}'.format(t.shape))
+            """
+
+            """
+            for i, v in enumerate(self.condensed_templates[' ']):
+                print(v)
+                if i > 10:
+                    break
+            """
+            
+            print("Normal template statistics: min: {}    max: {}    median: {}".format(min(normal_template_numbers), max(normal_template_numbers), int(statistics.median(normal_template_numbers))))
+            print("Condensed template statistics: min: {}    max: {}    median: {}".format(min(condensed_template_numbers), max(condensed_template_numbers), int(statistics.median(condensed_template_numbers))))
+
+    def clearTemplates(self):
+        self.normal_templates = {}
+        self.condensed_templates = {}
 
     def trainFromImage(self, auslab_image, header_truth_lines, center_truth_lines):
+        header_equalities = 0
+        center_equalities = 0
         for i, header_image in enumerate(auslab_image.getHeaderLines()):
             for j, char_image in enumerate(header_image.getCharImages()):
                 truth_char = header_truth_lines[i][j]
@@ -170,6 +357,7 @@ class AuslabTemplateRecognizer():
                 for image in self.normal_templates[truth_char]:
                     if np.array_equal(image, char_image):
                         exists = True
+                        header_equalities += 1
                         break
                 if not exists:
                     self.normal_templates[truth_char].append(char_image)
@@ -181,12 +369,22 @@ class AuslabTemplateRecognizer():
                     templates[truth_char] = []
                 char_image = char_image / 255.0
                 exists = False
+                
+                """
+                if truth_char == ' ' and np.sum(char_image) < (char_image.size - 10):
+                    print('*** {} , {}'.format(j, i))
+                    print(char_image)
+                """
+                
                 for image in templates[truth_char]:
                     if np.array_equal(image, char_image):
                         exists = True
+                        center_equalities += 1
                         break
                 if not exists:
                     templates[truth_char].append(char_image)
+        # print('  Header equalities: {}'.format(header_equalities))
+        # print('  Center equalities: {}'.format(center_equalities))
 
     def saveTemplates(self, template_file_path):
         output_file = open(template_file_path, 'wb')

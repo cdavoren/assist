@@ -5,7 +5,7 @@ import sys, os, time, re, datetime, queue, html, sqlite3, configparser, codecs
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
-from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt
+from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt, QSize
 
 from darkstyle import DarkStyle
 from logoview import RCLogoView
@@ -40,6 +40,9 @@ def decode_escapes(s):
 AUSLAB_MINIMUM_WIDTH = 1008
 AUSLAB_MINIMUM_HEIGHT = 730
 AUSLAB_MINIMUM_BLACK = 80
+
+AUSLAB_MINIMUM_WIDTH_LARGE = 1258
+AUSLAB_MINIMUM_HEIGHT_LARGE = 910
 
 PATIENT_NAME_REGEX = re.compile(r'Name:\s+(.*)DOB:')
 PATIENT_UR_REGEX = re.compile(r'UR No:\s+[A-Z]{2,3}(\d{6})')
@@ -206,6 +209,7 @@ class ProcessClipboardImageThread(QThread):
     message = pyqtSignal(str)
     processing = pyqtSignal(str)
     clipboard = pyqtSignal(str)
+    lines_complete = pyqtSignal()
 
     def __init__(self, assist_widget, config):
         super().__init__()
@@ -217,6 +221,7 @@ class ProcessClipboardImageThread(QThread):
         self.patient_db.log.connect(self.logMessage)
         self.last_UR = None
         self.config = config
+        self.auslab_image = None
 
     def logMessage(self, message_str):
         self.log.emit(message_str)
@@ -261,82 +266,85 @@ class ProcessClipboardImageThread(QThread):
 
             self.log.emit('Converting image format...')
             current_qimage = current_qimage.convertToFormat(QImage.Format_RGB32)
-            im_width = current_qimage.width()
-            im_height = current_qimage.height()
 
-            # print(self.qimage.byteCount())
-            ptr = current_qimage.bits()
-            ptr.setsize(current_qimage.byteCount())
-            im = np.array(ptr).reshape(im_height, im_width, 4)
+            ai = auslab.AuslabImage(auslab_config)
+            ai.loadScreenshot(current_qimage)
 
-            # Beware garbage collector...
-            current_qimage = None
+            self.auslab_image = ai
 
-            if im_width >= AUSLAB_MINIMUM_WIDTH and im_width < AUSLAB_MINIMUM_WIDTH + 20 and im_height >= AUSLAB_MINIMUM_HEIGHT and im_height < AUSLAB_MINIMUM_HEIGHT + 50:
-                self.log.emit('Converting to greyscale...')
-                image_grey = cv2.cvtColor(im, cv2.COLOR_RGBA2GRAY)
-                self.log.emit('Inverting image...')
-                image_inverted = cv2.bitwise_not(image_grey)
-                self.log.emit('Thresholding image...')
-                _, image_thresh = cv2.threshold(image_inverted, 240, 255, 0)
+            recognizer = None
+            if ai.size == ai.AUSLAB_SIZE_LARGE:
+                recognizer = auslab.AuslabTemplateRecognizer(auslab_config['large'])
+            elif ai.size == ai.AUSLAB_SIZE_NORMAL:
+                recognizer = auslab.AuslabTemplateRecognizer(auslab_config['normal'])
+            else:
+                # TODO: USE EXCEPTIONS
+                print('[Critical Errror] Unknown image size, cannot instantiate recognizer')
+                not_auslab_image_message()
+                current_qimage = None
+                continue
+                # sys.exit(1)
 
-                self.log.emit('Counting black pixels...')
-                black_count = cv2.countNonZero(image_thresh)
-                percentage = (black_count / (im_width * im_height)) * 100.0
-                if percentage >= AUSLAB_MINIMUM_BLACK:
-                    self.processingStart()
-                    self.log.emit("AUSLAB image identified.")
+            if ai.valid:
+                self.log.emit("AUSLAB image identified.")
 
-                    ai = auslab.AuslabImage(auslab_config)
-                    ai.loadScreenshot(im)
-                    header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
-                    center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
+                ai.getHeaderLines()
+                ai.getCenterLines()
 
-                    UR = PATIENT_UR_REGEX.search(header_lines[0]).group(1)
-                    name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
-                    DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
-                    collection_time = COLL_REGEX.search(header_lines[0]).group(1)
-                    lab_number = LAB_NO_REGEX.search(header_lines[0]).group(1)
-                    self.last_UR = UR
+                self.lines_complete.emit()
+                # header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
+                # center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
 
-                    self.log.emit('UR: {0}'.format(UR))
-                    self.log.emit('Name: {0}'.format(name))
-                    self.log.emit('DOB: {0}'.format(DOB))
-                    self.log.emit('Collection time: {0}'.format(collection_time))
-                    self.log.emit('Lab No: {0}'.format(lab_number))
-                    
-                    current_patient = self.patient_db.add_patient(UR, name, DOB)
+                """
+                print(header_lines)
+                print(center_lines)
 
-                    for line in header_lines:
-                        self.log.emit(line)
+                UR = PATIENT_UR_REGEX.search(header_lines[0]).group(1)
+                name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
+                DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
+                collection_time = COLL_REGEX.search(header_lines[0]).group(1)
+                lab_number = LAB_NO_REGEX.search(header_lines[0]).group(1)
+                self.last_UR = UR
 
-                    for line in center_lines:
-                        self.log.emit(line)
-                        for tk,tr in TEST_REGEX.items():
-                            try:
-                                result = tr.search(line)
-                                if result is None:
-                                    continue # to next line
-                                result_match = result.group(1)
-                                current_patient.add_test_result(lab_number, collection_time, tk, result_match)
-                            except IndexError:
+                self.log.emit('UR: {0}'.format(UR))
+                self.log.emit('Name: {0}'.format(name))
+                self.log.emit('DOB: {0}'.format(DOB))
+                self.log.emit('Collection time: {0}'.format(collection_time))
+                self.log.emit('Lab No: {0}'.format(lab_number))
+                
+                current_patient = self.patient_db.add_patient(UR, name, DOB)
+
+                for line in header_lines:
+                    self.log.emit(line)
+
+                for line in center_lines:
+                    self.log.emit(line)
+                    for tk,tr in TEST_REGEX.items():
+                        try:
+                            result = tr.search(line)
+                            if result is None:
                                 continue # to next line
-                    clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString())
-                    self.log.emit(clipboard_data)
-                    self.clipboard.emit(clipboard_data)
-                    self.message.emit('AUSLAB image processed')
-                    self.processingStop()
-                else:
-                    not_auslab_image_message()
+                            result_match = result.group(1)
+                            current_patient.add_test_result(lab_number, collection_time, tk, result_match)
+                        except IndexError:
+                            continue # to next line
+                clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString())
+                """
+                clipboard_data = 'There is no pasteable data'
+                self.log.emit(clipboard_data)
+                # self.clipboard.emit(clipboard_data)
+                self.message.emit('AUSLAB image processed')
+                self.processingStop()
             else:
                 not_auslab_image_message()
 
+            current_qimage = None
+
 class Assist(QWidget):
-    logsig = pyqtSignal(str)
+    # logsig = pyqtSignal(str)
 
     def __init__(self, config):
         super().__init__()
-        self.useLongForm = False
         self.config = config
         self.initUI()
 
@@ -347,10 +355,6 @@ class Assist(QWidget):
         self.setWindowIcon(self.mainIcon)
 
         self.processingLogo = RCLogoView()
-
-        self.longCheckBox = QCheckBox("&Long form")
-        self.longCheckBox.setCheckState(False)
-        self.longCheckBox.toggled.connect(self.handleCheckBox)
 
         self.formatComboBox = QComboBox()
         self.formatComboBox.addItems([x['name'] for x in self.config['main']['output_strings']])
@@ -370,7 +374,6 @@ class Assist(QWidget):
 
         self.layout = QVBoxLayout(self)
         self.layout.addWidget(self.processingLogo)
-        # self.layout.addWidget(self.longCheckBox)
         self.layout.addWidget(self.formatComboBox)
         self.layout.addWidget(self.formatText)
         self.layout.addWidget(self.log)
@@ -389,9 +392,52 @@ class Assist(QWidget):
         self.image_processing_thread.log.connect(self.handleLogMessage)
         self.image_processing_thread.clipboard.connect(self.handleClipboardMessage)
         self.image_processing_thread.processing.connect(self.handleProcessingStateChange)
+        self.image_processing_thread.lines_complete.connect(self.handleLinesComplete)
         self.image_processing_thread.start()
 
+        self.header_line_window = None
+
+
         self.show()
+
+        closeShortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        closeShortcut.activated.connect(self.shortcutClose)
+
+    def shortcutClose(self):
+        self.close()
+
+    def handleLinesComplete(self):
+
+        def ndarray_to_qlabel(ndarray):
+            data = ndarray.copy()
+            qimage = QImage(data, data.shape[1], data.shape[0], data.strides[0], QImage.Format_Grayscale8)
+            qpixmap = QPixmap(qimage)
+            qlabel = QLabel()
+            qlabel.setPixmap(qpixmap)
+            qlabel.resize(qpixmap.width(), qpixmap.height())
+            return qlabel
+
+        self.logMessage("Displaying lines...")
+
+        auslab_image = self.image_processing_thread.auslab_image
+
+        self.header_line_window = QWidget()
+        self.header_line_window.setWindowTitle("Header Lines")
+        layout = QVBoxLayout(self.header_line_window)
+        # self.header_line_window.setGeometry(500, 500, 500, 500)
+
+        for auslab_image_line in auslab_image.header_line_images:
+            layout.addWidget(ndarray_to_qlabel(auslab_image_line.line_image))
+            layout.addSpacing(5)
+
+        for auslab_image_line in auslab_image.center_line_images:
+            layout.addWidget(ndarray_to_qlabel(auslab_image_line.line_image))
+            layout.addSpacing(5)
+
+        # print(self.header_line_window.layout.sizeHint())
+
+        self.header_line_window.adjustSize()
+        self.header_line_window.show()
 
     def getCurrentOutputString(self):
         output_string = [x["string"] for x in self.config["main"]["output_strings"] if x["name"] == self.formatComboBox.currentText()]
@@ -433,15 +479,10 @@ class Assist(QWidget):
         if qimage.isNull():
             return
         self.image_queue_lock.lock()
+        self.logMessage('******************** PUTTING IMAGE IN QUEUE ***********************')
         self.image_queue.put(qimage)
         self.image_queue_lock.unlock()
         self.logMessage('Image waiting in queue...')
-
-    def handleCheckBox(self, data):
-        # print("Toggling checkbox...")
-        self.logMessage('Toggling checkbox...')
-        self.useLongForm = self.longCheckBox.isChecked()
-        # print('  Long form: {0}'.format(useLongForm))
 
     def logMessage(self, message):
         self.log_lock.lock()
@@ -456,6 +497,8 @@ class Assist(QWidget):
         cp.setText(content, cp.Clipboard)
 
     def closeEvent(self, event):
+        if self.header_line_window is not None:
+            self.header_line_window.close()
         self.trayIcon.hide()
 
     def bringFocus(self):
