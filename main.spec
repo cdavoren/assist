@@ -35,11 +35,11 @@ exe = EXE(pyz,
           strip=False,
           upx=False,
           icon='main-grey.ico',
-          console=True)
+          console=False)
 coll = COLLECT(exe,
                a.binaries,
                a.zipfiles,
                a.datas,
                strip=False,
                upx=False,
-               name='main')
+               name='assist')
