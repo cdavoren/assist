@@ -2,25 +2,22 @@
 
 block_cipher = None
 
-AUSLAB_DIR = 'auslab'
-f1_condensed = os.path.join(AUSLAB_DIR, 'F1_condensed.png')
-f1_normal = os.path.join(AUSLAB_DIR, 'F1_normal.png')
-templates = os.path.join(AUSLAB_DIR, 'templates.dat')
-
 a = Analysis(['main.py'],
              pathex=['G:\\workspace\\assist-main'],
              binaries=[],
              datas=[
                 ('main-grey.ico', '.'), 
                 ('config.yaml', '.'), 
-                ('templates-retrain.dat', '.'),
+                ('templates-normal.dat', '.'),
+                ('templates-large.dat', '.'),
                 ('rc-logo.png', '.'),
                 ('./darkstyle/*', 'darkstyle'),
-                (templates, AUSLAB_DIR),
-                (f1_condensed, AUSLAB_DIR), 
-                (f1_normal, AUSLAB_DIR),
+                ('F1_normal.png', '.'), 
+                ('F1_condensed.png', '.'),
+                ('F1_large_normal.png', '.'),
+                ('F1_large_condensed.png', '.'),
                 ],
-             hiddenimports=['yaml', 'encodings', 'keyboard', 'peewee'],
+             hiddenimports=['yaml', 'encodings', 'keyboard', 'peewee', 'auslab'],
              hookspath=[],
              runtime_hooks=[],
              excludes=[],
@@ -38,7 +35,7 @@ exe = EXE(pyz,
           strip=False,
           upx=False,
           icon='main-grey.ico',
-          console=False)
+          console=True)
 coll = COLLECT(exe,
                a.binaries,
                a.zipfiles,
