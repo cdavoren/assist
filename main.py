@@ -265,6 +265,7 @@ class ProcessClipboardImageThread(QThread):
                     self.image_queue_lock.unlock()
 
             self.log.emit('Converting image format...')
+            self.processingStart()
             current_qimage = current_qimage.convertToFormat(QImage.Format_RGB32)
 
             ai = auslab.AuslabImage(auslab_config)
@@ -282,20 +283,21 @@ class ProcessClipboardImageThread(QThread):
                 print('[Critical Errror] Unknown image size, cannot instantiate recognizer')
                 not_auslab_image_message()
                 current_qimage = None
+                self.processingStop()
                 continue
                 # sys.exit(1)
 
             if ai.valid:
                 self.log.emit("AUSLAB image identified.")
 
-                ai.getHeaderLines()
-                ai.getCenterLines()
+                # ai.getHeaderLines()
+                # ai.getCenterLines()
 
-                self.lines_complete.emit()
-                # header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
-                # center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
+                ## self.lines_complete.emit()
 
-                """
+                header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
+                center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
+
                 print(header_lines)
                 print(center_lines)
 
@@ -304,6 +306,7 @@ class ProcessClipboardImageThread(QThread):
                 DOB = PATIENT_DOB_REGEX.search(header_lines[1]).group(1)
                 collection_time = COLL_REGEX.search(header_lines[0]).group(1)
                 lab_number = LAB_NO_REGEX.search(header_lines[0]).group(1)
+
                 self.last_UR = UR
 
                 self.log.emit('UR: {0}'.format(UR))
@@ -329,14 +332,15 @@ class ProcessClipboardImageThread(QThread):
                         except IndexError:
                             continue # to next line
                 clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString())
-                """
-                clipboard_data = 'There is no pasteable data'
+
+                # clipboard_data = 'There is no pasteable data'
                 self.log.emit(clipboard_data)
-                # self.clipboard.emit(clipboard_data)
+                self.clipboard.emit(clipboard_data)
                 self.message.emit('AUSLAB image processed')
                 self.processingStop()
             else:
                 not_auslab_image_message()
+                self.processingStop()
 
             current_qimage = None
 

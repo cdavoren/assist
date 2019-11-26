@@ -66,8 +66,8 @@ auslab:
     central_panel_y_start: 194
     central_panel_y_end: 668
 
-    f1_normal_template_path: 'auslab/F1_normal.png'
-    f1_condensed_template_path: 'auslab/F1_condensed.png'
+    f1_normal_template_path: 'F1_normal.png'
+    f1_condensed_template_path: 'F1_condensed.png'
 
     template_file_path: './templates-normal.dat'
 
@@ -100,7 +100,7 @@ auslab:
     central_panel_y_start: 242
     central_panel_y_end: 835
 
-    f1_normal_template_path: 'auslab/F1_large_normal.png'
-    f1_condensed_template_path: 'auslab/F1_large_condensed.png'
+    f1_normal_template_path: 'F1_large_normal.png'
+    f1_condensed_template_path: 'F1_large_condensed.png'
 
     template_file_path: './templates-large.dat'
