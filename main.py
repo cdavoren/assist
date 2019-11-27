@@ -5,7 +5,7 @@ import sys, os, time, re, datetime, queue, html, sqlite3, configparser, codecs
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
-from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt, QSize
+from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt, QSize, pyqtSlot
 
 from darkstyle import DarkStyle
 from logoview import RCLogoView
@@ -207,7 +207,7 @@ class PatientDatabase(QObject):
 class ProcessClipboardImageThread(QThread):
     log = pyqtSignal(str)
     message = pyqtSignal(str)
-    processing = pyqtSignal(str)
+    processing = pyqtSignal(str, int, int)
     clipboard = pyqtSignal(str)
     lines_complete = pyqtSignal()
 
@@ -227,10 +227,13 @@ class ProcessClipboardImageThread(QThread):
         self.log.emit(message_str)
 
     def processingStart(self):
-        self.processing.emit('start')
+        self.processing.emit('start', -1, -1)
 
     def processingStop(self):
-        self.processing.emit('stop')
+        self.processing.emit('stop', -1, -1)
+
+    def processingUpdate(self, step, total_steps):
+        self.processing.emit('update', step, total_steps)
 
     def pasteLastUR(self):
         clipboard_data = QApplication.clipboard().text()
@@ -295,11 +298,25 @@ class ProcessClipboardImageThread(QThread):
 
                 ## self.lines_complete.emit()
 
-                header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
-                center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
+                raw_header_lines = ai.getHeaderLines()
+                raw_center_lines = ai.getCenterLines()
 
-                print(header_lines)
-                print(center_lines)
+                header_lines = []
+                center_lines = []
+
+
+                total_lines = len(raw_header_lines) + len(raw_center_lines)
+
+                for i, raw_header_line in enumerate(raw_header_lines):
+                    header_lines.append(recognizer.recognizeLine(raw_header_line))
+                    self.processing.emit('update', i+1, total_lines)
+
+                for i, raw_center_line in enumerate(raw_center_lines):
+                    center_lines.append(recognizer.recognizeLine(raw_center_line))
+                    self.processing.emit('update', i+1+len(raw_header_lines), total_lines)
+
+                # header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
+                # center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
 
                 UR = PATIENT_UR_REGEX.search(header_lines[0]).group(1)
                 name = PATIENT_NAME_REGEX.search(header_lines[1]).group(1)
@@ -347,23 +364,35 @@ class ProcessClipboardImageThread(QThread):
 class Assist(QWidget):
     # logsig = pyqtSignal(str)
 
+    WAITING_MESSAGE = 'AWAITING IMAGE - TAKE SCREENSHOT USING ALT+PRINTSCREEN'
+
+    VERSION_FILENAME = 'version-number.txt'
+
     def __init__(self, config):
         super().__init__()
         self.config = config
         self.initUI()
 
     def initUI(self):
-        self.mainIcon = QIcon('main-grey.ico')
+        self.mainIcon = QIcon('AssistIcon.ico')
         self.setGeometry(100, 100, 1000, 500)
         self.setWindowTitle('Assist')
         self.setWindowIcon(self.mainIcon)
 
         self.processingLogo = RCLogoView()
 
+        version_number = ''
+        with open(self.VERSION_FILENAME) as f:
+            version_number = f.readline()
+
+        output_string_names = [x['name'] for x in self.config['main']['output_strings']]
         self.formatComboBox = QComboBox()
-        self.formatComboBox.addItems([x['name'] for x in self.config['main']['output_strings']])
+        self.formatComboBox.addItems(output_string_names)
+        default_output_string = self.config['main']['default_output_string']
+        if default_output_string in output_string_names:
+            self.formatComboBox.setCurrentIndex(output_string_names.index(default_output_string))
         self.formatComboBox.currentIndexChanged.connect(self.handleOutputStringChanged)
-        # self.formatComboBox.setStyleSheet('QComboBox { color: red; }')
+
 
         self.formatText = QTextEdit()
         self.formatText.setReadOnly(True)
@@ -377,10 +406,39 @@ class Assist(QWidget):
         self.log.document().setDefaultStyleSheet('* { font-family: Consolas; } span.logmessage { color: #FFFFFF; white-space: pre; }')
 
         self.layout = QVBoxLayout(self)
-        self.layout.addWidget(self.processingLogo)
+        # self.layout.addWidget(self.processingLogo)
+
+        self.statusWidget = QWidget(self)
+        self.statusWidget.setObjectName('statusWidget')
+        # self.statusWidget.setStyleSheet('font-family: "Arame Mono"; ')
+        self.statusWidget.setStyleSheet('* { font-family: "Arame Mono"; font-size: 14px; } #statusWidget { border: none; }')
+        self.statusLayout = QHBoxLayout(self.statusWidget)
+        self.statusLayout.setContentsMargins(3, 3, 3, 3)
+        self.statusLayout.addStretch()
+        self.statusInitialLabel = QLabel('STATUS:')
+        self.statusInitialLabel.setStyleSheet('color: #AAAAAA;')
+        self.statusLayout.addWidget(self.statusInitialLabel)
+        self.statusMessageLabel = QLabel(self.WAITING_MESSAGE)
+        self.statusLayout.addWidget(self.statusMessageLabel)
+        self.statusLayout.addStretch()
+        self.layout.addWidget(self.statusWidget)
+
+        self.repeatButton = QPushButton('&Re-copy last text', self)
+        # self.repeatButton.setFlat(True)
+        self.repeatButton.setStyleSheet('min-height: 30px; max-width: 100px;')
+        self.repeatButton.clicked.connect(self.handleRepeatButtonClicked)
+
+        self.versionLabel = QLabel(version_number)
+        self.versionLabel.setStyleSheet('font-size: 10px;')
+        self.versionLabel.setAlignment(Qt.AlignRight)
+
+        self.layout.addWidget(QLabel('Output format:'))
         self.layout.addWidget(self.formatComboBox)
         self.layout.addWidget(self.formatText)
+        self.layout.addWidget(QLabel('Debug log:'))
         self.layout.addWidget(self.log)
+        self.layout.addWidget(self.repeatButton)
+        self.layout.addWidget(self.versionLabel)
 
         self.trayIcon = QSystemTrayIcon(self)
         self.trayIcon.setIcon(self.mainIcon)
@@ -401,6 +459,7 @@ class Assist(QWidget):
 
         self.header_line_window = None
 
+        self.last_clipboard_content = ''
 
         self.show()
 
@@ -464,26 +523,44 @@ class Assist(QWidget):
         # print(output_html)
         self.formatText.setHtml(output_html)
 
-    def handleProcessingStateChange(self, message_str):
+    def handleProcessingStateChange(self, message_str, step, total_steps):
+        COMPLETED_CHAR = '*'
+        # COMPLETED_CHAR = '█'
+        UNCOMPLETED_CHAR = '.'
         if message_str == 'start':
-            self.processingLogo.animationStart()
+            # self.processingLogo.animationStart()
+            self.statusMessageLabel.setText('AUSLAB IMAGE - PROCESSING 000% [{}]'.format(UNCOMPLETED_CHAR * 10))
         elif message_str == 'stop':
-            self.processingLogo.animationStop()
+            # self.processingLogo.animationStop()
+            self.statusMessageLabel.setText(self.WAITING_MESSAGE)
+        elif message_str == 'update':
+            percentage = int((step / total_steps) * 100)
+            completed_blocks = percentage // 10
+            uncompleted_blocks = 10 - completed_blocks
+            completed_text = COMPLETED_CHAR * completed_blocks
+            uncompleted_text = UNCOMPLETED_CHAR * uncompleted_blocks
+
+            self.statusMessageLabel.setText('AUSLAB IMAGE - PROCESSING {:03d}% [{}{}]'.format(percentage, completed_text, uncompleted_text))
 
     def handleProcessThreadMessage(self, message_str):
-        self.logMessage('Message signal')
+        # self.logMessage('Message signal')
         self.trayIcon.showMessage('Assist', message_str, 3000)
 
     def handleLogMessage(self, message):
         self.logMessage(message)
 
+    @pyqtSlot()
+    def handleRepeatButtonClicked(self):
+        self.handleClipboardMessage(self.last_clipboard_content)
+        # print('Repeat button pressed.')
+
+    @pyqtSlot()
     def handleClipboardChanged(self):
         self.logMessage('Clipboard changed')
         qimage = QApplication.clipboard().image()
         if qimage.isNull():
             return
         self.image_queue_lock.lock()
-        self.logMessage('******************** PUTTING IMAGE IN QUEUE ***********************')
         self.image_queue.put(qimage)
         self.image_queue_lock.unlock()
         self.logMessage('Image waiting in queue...')
@@ -492,11 +569,17 @@ class Assist(QWidget):
         self.log_lock.lock()
         dt = datetime.datetime.now()
         datestr = dt.strftime('%d-%m-%Y %H:%M:%S')
+        # print('At End: {}'.format(self.log.textCursor().atEnd()))
+        textCursor = self.log.textCursor()
+        textCursor.movePosition(QTextCursor.End)
+        self.log.setTextCursor(textCursor)
+        # print('Move successful: {}'.format(self.log.textCursor().movePosition(QTextCursor.End)))
         self.log.insertHtml('<span style=""><span style="color: #888888;">[{0}]</span> <span class="logmessage">{1}</span></span><br />'.format(datestr, html.escape(message)))
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
         self.log_lock.unlock()
 
     def handleClipboardMessage(self, content):
+        self.last_clipboard_content = content
         cp = QApplication.clipboard()
         cp.setText(content, cp.Clipboard)
 
@@ -526,6 +609,9 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName('Assist')
     app.setStyle(DarkStyle())
+
+    _id = QFontDatabase().addApplicationFont('ArameMono.ttf')
+
     assist = Assist(config)
     # keyboard.add_hotkey('ctrl+shift+a', bringFocus, args=(assist,))
     sys.exit(app.exec_())

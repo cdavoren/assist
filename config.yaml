@@ -1,6 +1,7 @@
 main:
   database_path: './patients.sqlite3'
   short_output_string: '{hb}\t{wbc}\t{platelets}\t{sodium}\t{potassium}\t{egfr}\t{creatinine}\t{crp}'
+  default_output_string: 'extra long'
   output_strings:
     - name: 'short'
       string: '{hb}\t{wbc}\t{platelets}\t{sodium}\t{potassium}\t{egfr}\t{creatinine}\t{crp}'
