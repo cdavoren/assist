@@ -3,7 +3,7 @@
 block_cipher = None
 
 a = Analysis(['main.py'],
-             pathex=['G:\\workspace\\assist-main'],
+             pathex=['G:\\workspace\\assist-main', 'G:\\workspace'],
              binaries=[],
              datas=[
                 ('main-grey.ico', '.'), 
@@ -19,7 +19,7 @@ a = Analysis(['main.py'],
                 ('ArameMono.ttf', '.'),
                 ('AssistIcon.ico', '.'),
                 ('version-number.txt', '.'),
-                ],
+             ],
              hiddenimports=['yaml', 'encodings', 'keyboard', 'peewee', 'auslab'],
              hookspath=[],
              runtime_hooks=[],

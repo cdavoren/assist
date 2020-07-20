@@ -1,4 +1,5 @@
 *.pyc
+node_modules/
 patients.sqlite3
 env-main/
 build/
