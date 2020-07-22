@@ -571,9 +571,19 @@ class Assist(QWidget):
             outputStream << "Clipboard event with type {}".format(str(QApplication.clipboard().mimeData())) << "\n"
 
             for mimeFormat in QApplication.clipboard().mimeData().formats():
+                mimeData = QApplication.clipboard().mimeData()
                 outputStream << str(mimeFormat) << "\n"
 
-            outputStream << QApplication.clipboard().text()
+                if mimeData.hasHtml():
+                    outputStream << mimeData.html() << "\n"
+                elif mimeData.hasText():
+                    outputStream << mimeData.text() << "\n"
+                else:
+                    outputStream << mimeData.data().data() << "\n"
+
+                outputStream << "\n"
+
+            # outputStream << QApplication.clipboard().text()
 
             clipboardLogFile.close()
 
