@@ -563,6 +563,20 @@ class Assist(QWidget):
     @pyqtSlot()
     def handleClipboardChanged(self):
         self.logMessage('Clipboard changed')
+
+        if self.config['main']['log_clipboard_events']:
+            clipboardLogFile = QFile('clipboard-log-{}-{}.txt'.format(datetime.datetime.now().strftime('%Y-%m-%d'), datetime.datetime.now().strftime('%H%M%S%f')) )
+            clipboardLogFile.open(QFile.WriteOnly | QFile.Text)
+            outputStream = QTextStream(clipboardLogFile)
+            outputStream << "Clipboard event with type {}".format(str(QApplication.clipboard().mimeData())) << "\n"
+
+            for mimeFormat in QApplication.clipboard().mimeData().formats():
+                outputStream << str(mimeFormat) << "\n"
+
+            outputStream << QApplication.clipboard().text()
+
+            clipboardLogFile.close()
+
         qimage = QApplication.clipboard().image()
         if qimage.isNull():
             return
