@@ -5,7 +5,7 @@ import sys, os, time, re, datetime, queue, html, sqlite3, configparser, codecs
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
-from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt, QSize, pyqtSlot
+from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt, QSize, pyqtSlot, QFile, QTextStream
 
 from darkstyle import DarkStyle
 from logoview import RCLogoView
@@ -19,6 +19,10 @@ import keyboard
 import yaml
 
 from peewee import *
+
+# import breeze_resources
+
+import qdarkstyle
 
 # START EXCERPT - From https://stackoverflow.com/questions/4020539/process-escape-sequences-in-a-string-in-python
 ESCAPE_SEQUENCE_RE = re.compile(r'''
@@ -83,7 +87,7 @@ class Configuration:
     instance = None
 
     def __init__(self, config_filename):
-        self.config = yaml.load(config_filename)
+        self.config = yaml.safe_load(config_filename)
 
     @staticmethod
     def current():
@@ -461,6 +465,8 @@ class Assist(QWidget):
 
         self.last_clipboard_content = ''
 
+        # self.setStyleSheet("background-color: rgba(53,53,53,255);")
+
         self.show()
 
         closeShortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
@@ -608,7 +614,15 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName('Assist')
-    app.setStyle(DarkStyle())
+
+    app.setStyleSheet(qdarkstyle.load_stylesheet(qt_api='pyqt5'))
+
+    """
+    qssFile = QFile("dark.qss")
+    qssFile.open(QFile.ReadOnly | QFile.Text)
+    stream = QTextStream(qssFile)
+    app.setStyleSheet(stream.readAll())
+    """
 
     _id = QFontDatabase().addApplicationFont('ArameMono.ttf')
 
