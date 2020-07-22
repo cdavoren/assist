@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt, QSize, pyqtSlot, QFile, QTextStream
 
-from darkstyle import DarkStyle
+# from darkstyle import DarkStyle
 from logoview import RCLogoView
 
 import auslab
