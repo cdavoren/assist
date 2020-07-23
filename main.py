@@ -20,9 +20,12 @@ import yaml
 
 from peewee import *
 
-# import breeze_resources
+import win32con
+from win32clipboard import *
 
 import qdarkstyle
+
+RTF_TEST_STRING = "{\\rtf1\\ansi{\\fonttbl\\f0\\fswiss Consolas;}\\f0\\pard \nThis is some {\\b bold} text.\\par \n}"
 
 # START EXCERPT - From https://stackoverflow.com/questions/4020539/process-escape-sequences-in-a-string-in-python
 ESCAPE_SEQUENCE_RE = re.compile(r'''
@@ -78,6 +81,11 @@ TEST_REGEX = {
     'Mono' : re.compile(r'Mono.*?:\s+([0-9\.]+)'),
     'Eosin' : re.compile(r'Eosin.*?:\s+([0-9\.]+)'),
     'Baso' : re.compile(r'Baso.*?:\s+([0-9\.]+)'),
+    'FreeT4' : re.compile(r'Free T4.*?:\s+([0-9\.]+)'),
+    'TSH' : re.compile(r'TSH\s+([0-9\.]+)'),
+    'B12' : re.compile(r'Vitamin B12\s+([0-9\.]+)'),
+    'Folate' : re.compile(r'Folate\s+([0-9\.]+)'),
+    'VitD' : re.compile(r'25-Hydroxy-Vitamin D\s+([0-9\.]+)'),
 }
 
 database_proxy = Proxy()
@@ -160,6 +168,11 @@ class Patient(BaseModel):
             mono=lab_tests.get('Mono', '-'),
             eosin=lab_tests.get('Eosin', '-'),
             baso=lab_tests.get('Baso', '-'),
+            freet4=lab_tests.get('FreeT4', '-'),
+            tsh=lab_tests.get('TSH', '-'),
+            b12=lab_tests.get('B12', '-'),
+            folate=lab_tests.get('Folate', '-'),
+            vitd=lab_tests.get('VitD', '-'),
             t="\t",
             tab="\t",
             n="\n"
@@ -397,7 +410,6 @@ class Assist(QWidget):
             self.formatComboBox.setCurrentIndex(output_string_names.index(default_output_string))
         self.formatComboBox.currentIndexChanged.connect(self.handleOutputStringChanged)
 
-
         self.formatText = QTextEdit()
         self.formatText.setReadOnly(True)
         self.formatText.document().setDefaultStyleSheet('span.sv { color: #CC44FF; }')
@@ -468,6 +480,9 @@ class Assist(QWidget):
         # self.setStyleSheet("background-color: rgba(53,53,53,255);")
 
         self.show()
+
+        self.rtf_clipboard_code = RegisterClipboardFormat(win32con.CF_RTF)
+        print("RTF clipboard type identified: {}".format(self.rtf_clipboard_code))
 
         closeShortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
         closeShortcut.activated.connect(self.shortcutClose)
@@ -568,24 +583,28 @@ class Assist(QWidget):
             clipboardLogFile = QFile('clipboard-log-{}-{}.txt'.format(datetime.datetime.now().strftime('%Y-%m-%d'), datetime.datetime.now().strftime('%H%M%S%f')) )
             clipboardLogFile.open(QFile.WriteOnly | QFile.Text)
             outputStream = QTextStream(clipboardLogFile)
-            outputStream << "Clipboard event with type {}".format(str(QApplication.clipboard().mimeData())) << "\n"
+            mimeData = QApplication.clipboard().mimeData()
+            outputStream << "Begin logging clipboard event.  Formats:" << "\n"
 
             for mimeFormat in QApplication.clipboard().mimeData().formats():
-                mimeData = QApplication.clipboard().mimeData()
-                outputStream << str(mimeFormat) << "\n"
+                outputStream << mimeFormat << "\n"
 
-                if mimeData.hasHtml():
+                if mimeFormat == 'text/html':
                     outputStream << mimeData.html() << "\n"
-                elif mimeData.hasText():
+                elif mimeFormat == 'text/plain':
                     outputStream << mimeData.text() << "\n"
+                elif mimeFormat == 'application/x-qt-windows-mime;value="Rich Text Format"':
+                    outputStream << mimeData.data(mimeFormat).data() << "\n"
                 else:
-                    outputStream << mimeData.data().data() << "\n"
+                    outputStream << "Unsupported data type."
 
                 outputStream << "\n"
 
             # outputStream << QApplication.clipboard().text()
 
             clipboardLogFile.close()
+
+        # self.clipboard.emit('Test')
 
         qimage = QApplication.clipboard().image()
         if qimage.isNull():
@@ -612,6 +631,13 @@ class Assist(QWidget):
         self.last_clipboard_content = content
         cp = QApplication.clipboard()
         cp.setText(content, cp.Clipboard)
+
+        """
+        OpenClipboard()
+        EmptyClipboard()
+        SetClipboardData(self.rtf_clipboard_code, RTF_TEST_STRING.encode('ascii'))
+        CloseClipboard()
+        """
 
     def closeEvent(self, event):
         if self.header_line_window is not None:
