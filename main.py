@@ -33,8 +33,8 @@ ESCAPE_SEQUENCE_RE = re.compile(r'''
     | \\u....          # 4-digit hex escapes
     | \\x..            # 2-digit hex escapes
     | \\[0-7]{1,3}     # Octal escapes
-    | \\N\{[^}]+\}     # Unicode characters by name
-    | \\[\\'"abfnrtv]  # Single-character escapes
+    # | \\N\{[^}]+\}     # Unicode characters by name
+    # | \\[\\'"abfnrtv]  # Single-character escapes
     )''', re.UNICODE | re.VERBOSE)
 
 def decode_escapes(s):
@@ -86,6 +86,10 @@ TEST_REGEX = {
     'B12' : re.compile(r'Vitamin B12\s+([0-9\.]+)'),
     'Folate' : re.compile(r'Folate\s+([0-9\.]+)'),
     'VitD' : re.compile(r'25-Hydroxy-Vitamin D\s+([0-9\.]+)'),
+    'Iron' : re.compile(r'Iron\s+(\<?\>?\s*[0-9\.]+)'),
+    'Transferrin' : re.compile(r'Transferrin\s+([0-9\.]+)'),
+    'TransferrinSat' : re.compile(r'Transferrin Saturation\s+(\<?\>?\s*[0-9\.]+)'),
+    'Ferritin' : re.compile(r'Ferritin\s+([0-9\.]+)'),
 }
 
 database_proxy = Proxy()
@@ -131,7 +135,6 @@ class Patient(BaseModel):
             lab_test = LabTest(lab_test_group=lab_test_group, name=test_name, value=result)
             lab_test.save()
 
-
     def getPasteableTests(self, lab_number, format_string):
         lab_test_group = None
         try:
@@ -144,7 +147,13 @@ class Patient(BaseModel):
         for lab_test in lab_test_group.lab_tests:
             lab_tests[lab_test.name] = lab_test.value
 
-        output_string = decode_escapes(format_string).format(
+        print('Test RTF string:\n{}'.format(RTF_TEST_STRING))
+        print('Raw format string:\n{}'.format(format_string))
+        output_string = decode_escapes(format_string)
+
+        print('Post escape decoding output string:\n{}'.format(output_string))
+
+        output_string = output_string.format(
             hb=lab_tests.get('Hb', '-'),
             platelets=lab_tests.get('Plt', '-'),
             wbc=lab_tests.get('WBC', '-'),
@@ -173,10 +182,15 @@ class Patient(BaseModel):
             b12=lab_tests.get('B12', '-'),
             folate=lab_tests.get('Folate', '-'),
             vitd=lab_tests.get('VitD', '-'),
+            iron=lab_tests.get('Iron', '-'),
+            transferrin=lab_tests.get('Transferrin', '-'),
+            transferrinsat=lab_tests.get('TransferrinSat', '-'),
+            ferritin=lab_tests.get('Ferritin', '-'),
             t="\t",
             tab="\t",
             n="\n"
         )
+        print('Output string: \n{}'.format(output_string))
         return output_string
 
 class LabTestGroup(BaseModel):
@@ -632,12 +646,12 @@ class Assist(QWidget):
         cp = QApplication.clipboard()
         cp.setText(content, cp.Clipboard)
 
-        """
-        OpenClipboard()
-        EmptyClipboard()
-        SetClipboardData(self.rtf_clipboard_code, RTF_TEST_STRING.encode('ascii'))
-        CloseClipboard()
-        """
+        if content.startswith(r'{\rtf'):
+            OpenClipboard()
+            EmptyClipboard()
+            # SetClipboardData(self.rtf_clipboard_code, RTF_TEST_STRING.encode('ascii'))
+            SetClipboardData(self.rtf_clipboard_code, content.encode('ascii'))
+            CloseClipboard()
 
     def closeEvent(self, event):
         if self.header_line_window is not None:
