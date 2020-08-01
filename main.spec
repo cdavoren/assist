@@ -6,7 +6,6 @@ a = Analysis(['main.py'],
              pathex=['G:\\workspace\\assist-main', 'G:\\workspace'],
              binaries=[],
              datas=[
-                ('main-grey.ico', '.'), 
                 ('config.yaml', '.'), 
                 ('templates-normal.dat', '.'),
                 ('templates-large.dat', '.'),
