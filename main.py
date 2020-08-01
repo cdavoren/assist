@@ -253,6 +253,7 @@ class ProcessClipboardImageThread(QThread):
         self.last_UR = None
         self.config = config
         self.auslab_image = None
+        self.match_patterns = None
 
     def logMessage(self, message_str):
         self.log.emit(message_str)
@@ -274,6 +275,14 @@ class ProcessClipboardImageThread(QThread):
         elif self.last_UR is not None:
             self.log.emit('Pasting last UR...')
             keyboard.write(self.last_UR)
+
+    def _getMatchPatterns(self):
+        if self.match_patterns is None:
+            self.match_patterns = {}
+            for mp in self.config['main']['match_patterns']:
+                self.match_patterns[mp['name']] = re.compile(mp['regex'])
+
+        return self.match_patterns
 
     def run(self):
         def not_auslab_image_message():
@@ -370,7 +379,7 @@ class ProcessClipboardImageThread(QThread):
 
                 for line in center_lines:
                     self.log.emit(line)
-                    for tk,tr in TEST_REGEX.items():
+                    for tk,tr in self._getMatchPatterns().items():
                         try:
                             result = tr.search(line)
                             if result is None:
@@ -649,7 +658,8 @@ class Assist(QWidget):
         if content.startswith(r'{\rtf'):
             OpenClipboard()
             EmptyClipboard()
-            # SetClipboardData(self.rtf_clipboard_code, RTF_TEST_STRING.encode('ascii'))
+            if self.config['main']['paste_text_with_rtf']:
+                SetClipboardData(CF_TEXT, content.encode('mbcs'))
             SetClipboardData(self.rtf_clipboard_code, content.encode('ascii'))
             CloseClipboard()
 
