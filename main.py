@@ -135,7 +135,7 @@ class Patient(BaseModel):
             lab_test = LabTest(lab_test_group=lab_test_group, name=test_name, value=result)
             lab_test.save()
 
-    def getPasteableTests(self, lab_number, format_string):
+    def getPasteableTests(self, lab_number, format_string, key_list):
         lab_test_group = None
         try:
             lab_test_group = self.lab_test_groups.select().where(LabTestGroup.lab_number == lab_number).get()
@@ -153,6 +153,12 @@ class Patient(BaseModel):
 
         print('Post escape decoding output string:\n{}'.format(output_string))
 
+        format_results = {}
+        for key in key_list:
+            format_results[key] = lab_tests.get(key, '-')
+
+        output_string = output_string.format(**format_results)
+        """
         output_string = output_string.format(
             hb=lab_tests.get('Hb', '-'),
             platelets=lab_tests.get('Plt', '-'),
@@ -190,6 +196,7 @@ class Patient(BaseModel):
             tab="\t",
             n="\n"
         )
+        """
         print('Output string: \n{}'.format(output_string))
         return output_string
 
@@ -388,7 +395,7 @@ class ProcessClipboardImageThread(QThread):
                             current_patient.add_test_result(lab_number, collection_time, tk, result_match)
                         except IndexError:
                             continue # to next line
-                clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString())
+                clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString(), [x['name'] for x in self.config['main']['match_patterns']])
 
                 # clipboard_data = 'There is no pasteable data'
                 self.log.emit(clipboard_data)
