@@ -6,6 +6,7 @@ import sys, os, time, re, datetime, queue, html, sqlite3, configparser, codecs
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import QObject, QDir, QThread, QMutex, pyqtSignal, Qt, QSize, pyqtSlot, QFile, QTextStream
+from PyQt5.QtWinExtras import QWinTaskbarProgress, QWinTaskbarButton
 
 # from darkstyle import DarkStyle
 from logoview import RCLogoView
@@ -474,6 +475,16 @@ class Assist(QWidget):
         self.repeatButton.setStyleSheet('min-height: 30px; max-width: 100px;')
         self.repeatButton.clicked.connect(self.handleRepeatButtonClicked)
 
+        self.taskbarButton = None
+        self.taskbarProgress = None
+
+        """
+        self.taskbarButton.setWindow(self.windowHandle())
+        self.taskbarProgress = self.taskbarButton.progress()
+        self.taskbarProgress.setVisible(True)
+        # self.taskbarProgress.setRange(0, 100)
+        """
+
         self.versionLabel = QLabel(version_number)
         self.versionLabel.setStyleSheet('font-size: 10px;')
         self.versionLabel.setAlignment(Qt.AlignRight)
@@ -584,6 +595,7 @@ class Assist(QWidget):
         elif message_str == 'stop':
             # self.processingLogo.animationStop()
             self.statusMessageLabel.setText(self.WAITING_MESSAGE)
+            self.taskbarProgress.setValue(0)
         elif message_str == 'update':
             percentage = int((step / total_steps) * 100)
             completed_blocks = percentage // 10
@@ -592,6 +604,8 @@ class Assist(QWidget):
             uncompleted_text = UNCOMPLETED_CHAR * uncompleted_blocks
 
             self.statusMessageLabel.setText('AUSLAB IMAGE - PROCESSING {:03d}% [{}{}]'.format(percentage, completed_text, uncompleted_text))
+            self.taskbarProgress.setValue(int((step / total_steps) * 100))
+            
 
     def handleProcessThreadMessage(self, message_str):
         # self.logMessage('Message signal')
@@ -670,7 +684,14 @@ class Assist(QWidget):
             SetClipboardData(self.rtf_clipboard_code, content.encode('ascii'))
             CloseClipboard()
 
+    def showEvent(self, event):
+        self.taskbarButton = QWinTaskbarButton(self)
+        self.taskbarButton.setWindow(self.windowHandle())
+        self.taskbarProgress = self.taskbarButton.progress()
+        self.taskbarProgress.setVisible(True)
+
     def closeEvent(self, event):
+        # print('Close Event')
         if self.header_line_window is not None:
             self.header_line_window.close()
         self.trayIcon.hide()
@@ -697,13 +718,6 @@ def main():
     app.setApplicationName('Assist')
 
     app.setStyleSheet(qdarkstyle.load_stylesheet(qt_api='pyqt5'))
-
-    """
-    qssFile = QFile("dark.qss")
-    qssFile.open(QFile.ReadOnly | QFile.Text)
-    stream = QTextStream(qssFile)
-    app.setStyleSheet(stream.readAll())
-    """
 
     _id = QFontDatabase().addApplicationFont('ArameMono.ttf')
 
