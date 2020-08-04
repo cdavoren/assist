@@ -34,8 +34,8 @@ ESCAPE_SEQUENCE_RE = re.compile(r'''
     | \\u....          # 4-digit hex escapes
     | \\x..            # 2-digit hex escapes
     | \\[0-7]{1,3}     # Octal escapes
-    # | \\N\{[^}]+\}     # Unicode characters by name
-    # | \\[\\'"abfnrtv]  # Single-character escapes
+    | \\N\{[^}]+\}     # Unicode characters by name
+    | \\[\\'"abfnrtv]  # Single-character escapes
     )''', re.UNICODE | re.VERBOSE)
 
 def decode_escapes(s):
@@ -159,45 +159,6 @@ class Patient(BaseModel):
             format_results[key] = lab_tests.get(key, '-')
 
         output_string = output_string.format(**format_results)
-        """
-        output_string = output_string.format(
-            hb=lab_tests.get('Hb', '-'),
-            platelets=lab_tests.get('Plt', '-'),
-            wbc=lab_tests.get('WBC', '-'),
-            sodium=lab_tests.get('Na', '-'),
-            potassium=lab_tests.get('K', '-'),
-            magnesium=lab_tests.get('Mg', '-'),
-            calcium=lab_tests.get('Ca', '-'),
-            phosphate=lab_tests.get('Ph', '-'),
-            egfr=lab_tests.get('eGFR', '-'),
-            creatinine=lab_tests.get('Cr', '-'),
-            ast=lab_tests.get('AST', '-'),
-            alt=lab_tests.get('ALT', '-'),
-            ggt=lab_tests.get('GGT', '-'),
-            alp=lab_tests.get('ALP', '-'),
-            ldh=lab_tests.get('LD', '-'),
-            crp=lab_tests.get('CRP', '-'),
-            esr=lab_tests.get('ESR', '-'),
-            inr=lab_tests.get('INR', '-'),
-            neut=lab_tests.get('Neut', '-'),
-            lymph=lab_tests.get('Lymph', '-'),
-            mono=lab_tests.get('Mono', '-'),
-            eosin=lab_tests.get('Eosin', '-'),
-            baso=lab_tests.get('Baso', '-'),
-            freet4=lab_tests.get('FreeT4', '-'),
-            tsh=lab_tests.get('TSH', '-'),
-            b12=lab_tests.get('B12', '-'),
-            folate=lab_tests.get('Folate', '-'),
-            vitd=lab_tests.get('VitD', '-'),
-            iron=lab_tests.get('Iron', '-'),
-            transferrin=lab_tests.get('Transferrin', '-'),
-            transferrinsat=lab_tests.get('TransferrinSat', '-'),
-            ferritin=lab_tests.get('Ferritin', '-'),
-            t="\t",
-            tab="\t",
-            n="\n"
-        )
-        """
         print('Output string: \n{}'.format(output_string))
         return output_string
 
@@ -574,7 +535,7 @@ class Assist(QWidget):
 
     def handleOutputStringChanged(self):
         def highlightOutputString(output_string):
-            return re.sub(r'\{(.*?)\}', r'<span class="sv">{\1}</span>', output_string)
+            return re.sub(r'([^\{]|^)\{([^\{].*?)(\}|$)', r'\1<span class="sv">{\2}</span>', output_string)
 
         output_string = self.getCurrentOutputString()
         if output_string is None:
