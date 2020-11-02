@@ -225,7 +225,7 @@ main:
     - name: 'pco2'
       regex: 'pCO2\s+([0-9\.]+)'
     - name: 'po2'
-      regex: 'pO2\s+([0-9\.]+)'
+      regex: 'p02\s+([0-9\.]+)'
     - name: 'o2sat'
       regex: 'O2 Sat\.\s+([0-9\.]+)'
     - name: 'lactate'

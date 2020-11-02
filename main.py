@@ -336,7 +336,7 @@ class ProcessClipboardImageThread(QThread):
 
             if ai.valid:
                 self.log.emit("AUSLAB image identified.")
-                self.auslab_image.getCenterLineCharColor(5, 11)
+                # self.auslab_image.getCenterLineCharColor(5, 11)
 
                 # ai.getHeaderLines()
                 # ai.getCenterLines()
@@ -390,6 +390,7 @@ class ProcessClipboardImageThread(QThread):
                             if result is None:
                                 continue # to next line
                             result_match = result.group(1)
+                            print('Colour result for {}'.format(tk))
                             color = ai.getCenterLineCharColor(i, result.span(1)[0])
                             self.log.emit('Found {} with value {} and colour {}'.format(tk, result_match, color))
                             current_patient.add_test_result(lab_number, collection_time, tk, result_match, color)
