@@ -394,8 +394,8 @@ class ProcessClipboardImageThread(QThread):
                             result = tr.search(line)
                             if result is None:
                                 continue # to next line
-                            result_match = result.group(1)
-                            color = ai.getCenterLineCharColor(i, result.span(1)[0])
+                            result_match = result.group('result')
+                            color = ai.getCenterLineCharColor(i, result.span('result')[0])
                             self.log.emit('Determined colour for {} as {}'.format(tk, color))
                             # self.log.emit('Found {} with value {} and colour {}'.format(tk, result_match, color))
                             current_patient.add_test_result(lab_number, collection_time, tk, result_match, color)
