@@ -259,6 +259,9 @@ auslab:
     condensed_line_height: 23
     condensed_char_width: 8
 
+    central_panel_non_condensed_x_left_margin: 32
+    central_panel_non_condensed_x_right_margin: 16
+
     central_panel_y_start: 194
     central_panel_y_end: 668
 
@@ -292,6 +295,9 @@ auslab:
 
     condensed_line_height: 29
     condensed_char_width: 10
+
+    central_panel_non_condensed_x_left_margin: 40
+    central_panel_non_condensed_x_right_margin: 20
 
     central_panel_y_start: 242
     central_panel_y_end: 835

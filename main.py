@@ -149,17 +149,17 @@ class Patient(BaseModel):
         for lab_test in lab_test_group.lab_tests:
             lab_tests[lab_test.name] = lab_test.value
 
-        print('Test RTF string:\n{}'.format(RTF_TEST_STRING))
-        print('Raw format string:\n{}'.format(format_string))
+        # print('Test RTF string:\n{}'.format(RTF_TEST_STRING))
+        # print('Raw format string:\n{}'.format(format_string))
         output_string = decode_escapes(format_string)
 
-        print('Post escape decoding output string:\n{}'.format(output_string))
+        # print('Post escape decoding output string:\n{}'.format(output_string))
 
         if output_mime_type == 'application/rtf':
             # This has to be the world's shittiest RTF colour substitution code
             # Will need to consider colour table -> assume default already in format strings, or replace with our own in actual output?
             # Also have to use colour correspondence -> "green" values in AUSLAB should probably just be black/grey in output -> how can we customise this?
-            # Decision: Let the format string determine the colour table as this allows for customisation -> will however need to have convention for which entry corresponds to which AUSLAB colour:
+            # Decision: Let the format string determine the colour table, with a predefined/convention index correspondence between colour names and entries, as this allows for customisation:
             colour_table = {
                 "green" : 1,
                 "yellow" : 2,
@@ -181,7 +181,7 @@ class Patient(BaseModel):
                 else:
                     format_results[key] = '-'
             output_string = output_string.format(**format_results)
-            print('RTF output string: \n{}'.format(output_string))
+            # print('RTF output string: \n{}'.format(output_string))
             return output_string
         else:
             # Life is easy, assume text/plain, simply replace the values
@@ -349,16 +349,18 @@ class ProcessClipboardImageThread(QThread):
                 header_lines = []
                 center_lines = []
 
-
                 total_lines = len(raw_header_lines) + len(raw_center_lines)
+
+                # Given that colour detection is now an additional processing burden, we now assume that processing the initial text represents approximately only 80% of the work
+                total_steps = int(total_lines * 1.25)
 
                 for i, raw_header_line in enumerate(raw_header_lines):
                     header_lines.append(recognizer.recognizeLine(raw_header_line))
-                    self.processing.emit('update', i+1, total_lines)
+                    self.processing.emit('update', i+1, total_steps)
 
                 for i, raw_center_line in enumerate(raw_center_lines):
                     center_lines.append(recognizer.recognizeLine(raw_center_line))
-                    self.processing.emit('update', i+1+len(raw_header_lines), total_lines)
+                    self.processing.emit('update', i+1+len(raw_header_lines), total_steps)
 
                 # header_lines = [recognizer.recognizeLine(x) for x in ai.getHeaderLines()]
                 # center_lines = [recognizer.recognizeLine(x) for x in ai.getCenterLines()]
@@ -382,21 +384,25 @@ class ProcessClipboardImageThread(QThread):
                 for line in header_lines:
                     self.log.emit(line)
 
-                for i, line in enumerate(center_lines):
+                for line in center_lines:
                     self.log.emit(line)
+
+                for i, line in enumerate(center_lines):
+                    # self.log.emit(line)
                     for tk,tr in self._getMatchPatterns().items():
                         try:
                             result = tr.search(line)
                             if result is None:
                                 continue # to next line
                             result_match = result.group(1)
-                            print('Colour result for {}'.format(tk))
                             color = ai.getCenterLineCharColor(i, result.span(1)[0])
-                            self.log.emit('Found {} with value {} and colour {}'.format(tk, result_match, color))
+                            self.log.emit('Determined colour for {} as {}'.format(tk, color))
+                            # self.log.emit('Found {} with value {} and colour {}'.format(tk, result_match, color))
                             current_patient.add_test_result(lab_number, collection_time, tk, result_match, color)
                         except IndexError:
                             continue # to next line
                 clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString(), [x['name'] for x in self.config['main']['match_patterns']], self.assist_widget.formatType.text(), Configuration.current()['main']['non_green_bolding'])
+                self.processing.emit('update', total_steps, total_steps)
 
                 # clipboard_data = 'There is no pasteable data'
                 self.log.emit(clipboard_data)
