@@ -1,13 +1,16 @@
 main:
   database_path: './patients.sqlite3'
   short_output_string: '{hb}\t{wbc}\t{platelets}\t{sodium}\t{potassium}\t{egfr}\t{creatinine}\t{crp}'
-  default_output_string: 'extra long (RTF)'
+  default_output_string: 'Respiratory extended (RTF)'
   log_clipboard_events: no
   paste_text_with_rtf: yes
+  non_green_bolding: yes
   output_strings:
     - name: 'short'
+      type: 'text/plain'
       string: '{hb}\t{wbc}\t{platelets}\t{sodium}\t{potassium}\t{egfr}\t{creatinine}\t{crp}'
     - name: 'long'
+      type: 'text/plain'
       string: '- Hb {hb}, Plt {platelets}, WBC {wbc}
 
       - Na {sodium}, K {potassium}
@@ -22,6 +25,7 @@ main:
       
       - LDH {ldh}'
     - name: 'extra long'
+      type: 'text/plain'
       string: '- Hb {hb}, Plt {platelets}, WBC {wbc}
 
       - Neuts {neut}, Lymphs {lymph}, Monos {mono}, Eosins {eosin}, Basos {baso}
@@ -40,11 +44,12 @@ main:
 
       - INR {inr}'
     - name: 'extra long (RTF)'
+      type: 'application/rtf'
       string: '{{\\rtf\\ansi
 
       {{\\fonttbl{{\\f0\\fmodern Courier New;}}{{\\f2 Tahoma;}}}}
 
-      {{\\colortbl\\red0\\green0\\blue0;\\red0\\green0\\blue255;\\red0\\green255\\blue255;\\red0\\green255\\blue0;\\red255\\green0\\blue255;\\red255\\green0\\blue0;
+      {{\\colortbl\\red37\\green37\\blue37;\\red37\\green37\\blue37;\\red128\\green128\\blue0;\\red128\\green0\\blue0;\\red128\\green64\\blue0;\\red0\\green0\\blue255;\\red255\\green0\\blue0;
 \\red255\\green255\\blue0;\\red255\\green255\\blue255;}}
 
       \\pard\\plain
@@ -82,6 +87,68 @@ main:
       \\par
 
       - INR {inr}
+
+      }}'
+    - name: 'Respiratory extended (RTF)'
+      type: 'application/rtf'
+      string: '{{\\rtf\\ansi
+
+      {{\\fonttbl{{\\f0\\fmodern Courier New;}}{{\\f2 Tahoma;}}}}
+
+      {{\\colortbl\\red37\\green37\\blue37;\\red37\\green37\\blue37;\\red128\\green128\\blue0;\\red128\\green0\\blue0;\\red128\\green64\\blue0;\\red0\\green0\\blue255;\\red255\\green0\\blue0;
+\\red255\\green255\\blue0;\\red255\\green255\\blue255;}}
+
+      \\pard\\plain
+
+      \\f0 - Hb {hb}, Plt {platelets}, WBC {wbc}
+
+      \\par
+
+      - Neuts {neut}, Lymphs {lymph}, Monos {mono}, Eosins {eosin}, Basos {baso}
+
+      \\par
+      
+      - eGFR {egfr}, Cr {creatinine}
+
+      \\par
+
+      - ALT {alt}, AST {ast}, GGT {ggt}, ALP {alp}
+
+      \\par
+
+      - Na {sodium}, K {potassium}
+
+      \\par
+
+      - Ca {calcium}, Mg {magnesium}, Ph {phosphate}
+
+      \\par
+
+      - Bicarbonate {bicarb}
+
+      \\par
+
+      - Albumin {albumin}
+
+      \\par
+
+      - CRP {crp}
+
+      \\par
+
+      - ESR {esr}
+
+      \\par
+
+      - LDH {ldh}
+
+      \\par
+
+      - INR {inr}
+
+      \\par
+
+      - VBG : pH {ph}, pCO2 {pco2}, HCO3 {hco3}, Lactate {lactate}, pO2 {po2}, O2 Sat. {o2sat}%
 
       }}'
   match_patterns:
@@ -149,6 +216,22 @@ main:
       regex: 'Transferrin Saturation\s+(\<?\>?\s*[0-9\.]+)'
     - name: 'ferritin'
       regex: 'Ferritin\s+([0-9\.]+)'
+    - name: 'albumin'
+      regex: 'Albumin\s+([0-9]+)'
+    - name: 'bicarb'
+      regex: 'Bicarb\.\s+([0-9\.]+)'
+    - name: 'ph'
+      regex: 'pH\s+([0-9\.]+)'
+    - name: 'pco2'
+      regex: 'pCO2\s+([0-9\.]+)'
+    - name: 'po2'
+      regex: 'pO2\s+([0-9\.]+)'
+    - name: 'o2sat'
+      regex: 'O2 Sat\.\s+([0-9\.]+)'
+    - name: 'lactate'
+      regex: 'Lact\s+([0-9\.]+)'
+    - name: 'hco3'
+      regex: 'HCO3-\s+([0-9\.]+)'
 auslab:
   normal:
     name: normal

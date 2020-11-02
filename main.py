@@ -117,7 +117,7 @@ class Patient(BaseModel):
     name = CharField()
     DOB = CharField()
 
-    def add_test_result(self, lab_number, test_datetime, test_name, result):
+    def add_test_result(self, lab_number, test_datetime, test_name, result, auslab_color):
         # And overwrite
         lab_test_group = None
 
@@ -130,13 +130,14 @@ class Patient(BaseModel):
         try:
             lab_test = lab_test_group.lab_tests.select().where(LabTest.name == test_name).get()
             lab_test.value = result
+            lab_test.auslab_color = auslab_color
             lab_test.save()
             return
         except LabTest.DoesNotExist:
-            lab_test = LabTest(lab_test_group=lab_test_group, name=test_name, value=result)
+            lab_test = LabTest(lab_test_group=lab_test_group, name=test_name, value=result, auslab_color=auslab_color)
             lab_test.save()
 
-    def getPasteableTests(self, lab_number, format_string, key_list):
+    def getPasteableTests(self, lab_number, format_string, key_list, output_mime_type, non_green_bolding=False):
         lab_test_group = None
         try:
             lab_test_group = self.lab_test_groups.select().where(LabTestGroup.lab_number == lab_number).get()
@@ -154,13 +155,44 @@ class Patient(BaseModel):
 
         print('Post escape decoding output string:\n{}'.format(output_string))
 
-        format_results = {}
-        for key in key_list:
-            format_results[key] = lab_tests.get(key, '-')
+        if output_mime_type == 'application/rtf':
+            # This has to be the world's shittiest RTF colour substitution code
+            # Will need to consider colour table -> assume default already in format strings, or replace with our own in actual output?
+            # Also have to use colour correspondence -> "green" values in AUSLAB should probably just be black/grey in output -> how can we customise this?
+            # Decision: Let the format string determine the colour table as this allows for customisation -> will however need to have convention for which entry corresponds to which AUSLAB colour:
+            colour_table = {
+                "green" : 1,
+                "yellow" : 2,
+                "red" : 3,
+                "orange" : 4,
+                "blue" : 5,
+            }
 
-        output_string = output_string.format(**format_results)
-        print('Output string: \n{}'.format(output_string))
-        return output_string
+            format_results = {}
+            for key in key_list:
+                relevant_test = [x for x in lab_test_group.lab_tests if x.name == key]
+                if len(relevant_test) > 0:
+                    relevant_test = relevant_test[0]
+                    # print('{} - {}'.format(relevant_test[0].name, relevant_test[0].auslab_color))
+                    if non_green_bolding and relevant_test.auslab_color != 'green':
+                        format_results[key] = '{{\\b\\cf{} {}}}'.format(colour_table[relevant_test.auslab_color], relevant_test.value)
+                    else:
+                        format_results[key] = '{{\\cf{} {}}}'.format(colour_table[relevant_test.auslab_color], relevant_test.value)
+                else:
+                    format_results[key] = '-'
+            output_string = output_string.format(**format_results)
+            print('RTF output string: \n{}'.format(output_string))
+            return output_string
+        else:
+            # Life is easy, assume text/plain, simply replace the values
+            format_results = {}
+            for key in key_list:
+                format_results[key] = lab_tests.get(key, '-')
+
+            output_string = output_string.format(**format_results)
+            print('Output string: \n{}'.format(output_string))
+            return output_string
+
 
 class LabTestGroup(BaseModel):
     patient = ForeignKeyField(Patient, backref='lab_test_groups')
@@ -171,6 +203,9 @@ class LabTest(BaseModel):
     lab_test_group = ForeignKeyField(LabTestGroup, backref='lab_tests')
     name = CharField()
     value = CharField()
+    # Don't want to add 'choices' here because there may be new colours added later
+    # It will therefore be the responsibility of the calling object to use the data appropriately
+    auslab_color = CharField(null = True, default="green")
 
 class PatientDatabase(QObject):
     log = pyqtSignal(str)
@@ -301,6 +336,7 @@ class ProcessClipboardImageThread(QThread):
 
             if ai.valid:
                 self.log.emit("AUSLAB image identified.")
+                self.auslab_image.getCenterLineCharColor(5, 11)
 
                 # ai.getHeaderLines()
                 # ai.getCenterLines()
@@ -346,7 +382,7 @@ class ProcessClipboardImageThread(QThread):
                 for line in header_lines:
                     self.log.emit(line)
 
-                for line in center_lines:
+                for i, line in enumerate(center_lines):
                     self.log.emit(line)
                     for tk,tr in self._getMatchPatterns().items():
                         try:
@@ -354,10 +390,12 @@ class ProcessClipboardImageThread(QThread):
                             if result is None:
                                 continue # to next line
                             result_match = result.group(1)
-                            current_patient.add_test_result(lab_number, collection_time, tk, result_match)
+                            color = ai.getCenterLineCharColor(i, result.span(1)[0])
+                            self.log.emit('Found {} with value {} and colour {}'.format(tk, result_match, color))
+                            current_patient.add_test_result(lab_number, collection_time, tk, result_match, color)
                         except IndexError:
                             continue # to next line
-                clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString(), [x['name'] for x in self.config['main']['match_patterns']])
+                clipboard_data = current_patient.getPasteableTests(lab_number, self.assist_widget.getCurrentOutputString(), [x['name'] for x in self.config['main']['match_patterns']], self.assist_widget.formatType.text(), Configuration.current()['main']['non_green_bolding'])
 
                 # clipboard_data = 'There is no pasteable data'
                 self.log.emit(clipboard_data)
@@ -402,6 +440,7 @@ class Assist(QWidget):
             self.formatComboBox.setCurrentIndex(output_string_names.index(default_output_string))
         self.formatComboBox.currentIndexChanged.connect(self.handleOutputStringChanged)
 
+        self.formatType = QLabel()
         self.formatText = QTextEdit()
         self.formatText.setReadOnly(True)
         self.formatText.document().setDefaultStyleSheet('span.sv { color: #CC44FF; }')
@@ -452,6 +491,7 @@ class Assist(QWidget):
 
         self.layout.addWidget(QLabel('Output format:'))
         self.layout.addWidget(self.formatComboBox)
+        self.layout.addWidget(self.formatType)
         self.layout.addWidget(self.formatText)
         self.layout.addWidget(QLabel('Debug log:'))
         self.layout.addWidget(self.log)
@@ -525,11 +565,18 @@ class Assist(QWidget):
         self.header_line_window.adjustSize()
         self.header_line_window.show()
 
+    def getCurrentOutputStringEntry(self):
+        output_string_config_entry = [x for x in self.config['main']['output_strings'] if x['name'] == self.formatComboBox.currentText()]
+        if len(output_string_config_entry) > 0:
+            return output_string_config_entry[0]
+        else:
+            return None
+
     def getCurrentOutputString(self):
-        output_string = [x["string"] for x in self.config["main"]["output_strings"] if x["name"] == self.formatComboBox.currentText()]
+        output_string = [x['string'] for x in self.config["main"]["output_strings"] if x["name"] == self.formatComboBox.currentText()]
         if len(output_string) > 0:
             output_string = output_string[0]
-            return output_string
+            return output_string 
         else:
             return None
 
@@ -537,9 +584,14 @@ class Assist(QWidget):
         def highlightOutputString(output_string):
             return re.sub(r'([^\{]|^)\{([^\{].*?)(\}|$)', r'\1<span class="sv">{\2}</span>', output_string)
 
-        output_string = self.getCurrentOutputString()
-        if output_string is None:
+        entry = self.getCurrentOutputStringEntry()
+        print(entry)
+        output_string = ''
+        if entry is None:
             output_string = ''
+        else:
+            output_string = entry['string']
+            self.formatType.setText(entry['type'])
         output_string = output_string.replace('\\n', '\n')
         output_string = output_string.replace('\n', '<br />')
         output_html = highlightOutputString(output_string)
