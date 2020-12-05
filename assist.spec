@@ -2,8 +2,8 @@
 
 block_cipher = None
 
-a = Analysis(['main.py'],
-             pathex=['G:\\workspace\\assist-main', 'G:\\workspace'],
+a = Analysis(['assist.py'],
+             pathex=['G:\\workspace\\assist', 'G:\\workspace'],
              binaries=[],
              datas=[
                 ('config.yaml', '.'), 
